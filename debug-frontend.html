@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Debug Test</title>
+</head>
+<body>
+    <h1>Frontend API Debug</h1>
+    <div id="results"></div>
+    <button id="test-api-keys">Test API Keys Save</button>
+    <button id="test-keywords-upload">Test Keywords Upload</button>
+    <button id="test-stores">Test Stores Create</button>
+    
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        const results = document.getElementById('results');
+        
+        function log(message) {
+            results.innerHTML += `<p>${new Date().toISOString()}: ${message}</p>`;
+            console.log(message);
+        }
+        
+        const getAuthHeaders = () => {
+            const token = localStorage.getItem('auth_token') || 'fake-token';
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            };
+        };
+        
+        // Test API Keys Save
+        document.getElementById('test-api-keys').onclick = async () => {
+            log('Testing API Keys Save...');
+            try {
+                const response = await fetch(`${API_BASE}/api/settings/api-keys`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        openai_api_key: 'sk-test-key'
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to save API keys');
+                }
+                
+                const result = await response.json();
+                log(`✅ API Keys Save Success: ${JSON.stringify(result)}`);
+            } catch (error) {
+                log(`❌ API Keys Save Failed: ${error.message}`);
+            }
+        };
+        
+        // Test Keywords Upload
+        document.getElementById('test-keywords-upload').onclick = async () => {
+            log('Testing Keywords Upload...');
+            try {
+                const csvContent = 'keyword\\ntest keyword 1\\ntest keyword 2';
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const file = new File([blob], 'keywords.csv', { type: 'text/csv' });
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('campaign_name', 'Test Campaign');
+                formData.append('template_type', 'ecommerce_general');
+                
+                const token = localStorage.getItem('auth_token') || 'fake-token';
+                const response = await fetch(`${API_BASE}/api/keywords/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: formData,
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to upload keywords');
+                }
+                
+                const result = await response.json();
+                log(`✅ Keywords Upload Success: ${JSON.stringify(result)}`);
+            } catch (error) {
+                log(`❌ Keywords Upload Failed: ${error.message}`);
+            }
+        };
+        
+        // Test Stores Create
+        document.getElementById('test-stores').onclick = async () => {
+            log('Testing Stores Create...');
+            try {
+                const response = await fetch(`${API_BASE}/api/stores/`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        store_name: 'Test Store',
+                        shop_url: 'test-store.myshopify.com',
+                        access_token: 'test-token',
+                        blog_handle: 'news'
+                    }),
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to create store');
+                }
+                
+                const result = await response.json();
+                log(`✅ Stores Create Success: ${JSON.stringify(result)}`);
+            } catch (error) {
+                log(`❌ Stores Create Failed: ${error.message}`);
+            }
+        };
+        
+        // Auto-run initial tests
+        log('Starting automatic tests...');
+        setTimeout(() => {
+            document.getElementById('test-api-keys').click();
+        }, 1000);
+        setTimeout(() => {
+            document.getElementById('test-keywords-upload').click();
+        }, 2000);
+        setTimeout(() => {
+            document.getElementById('test-stores').click();
+        }, 3000);
+    </script>
+</body>
+</html>

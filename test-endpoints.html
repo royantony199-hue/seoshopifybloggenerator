@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Endpoint Test</title>
+</head>
+<body>
+    <h1>API Endpoint Tests</h1>
+    <div id="results"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        const results = document.getElementById('results');
+        
+        async function testEndpoint(name, url, options = {}) {
+            try {
+                console.log(`Testing ${name}...`);
+                const response = await fetch(`${API_BASE}${url}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const data = await response.json();
+                const status = response.ok ? '✅' : '❌';
+                results.innerHTML += `<p>${status} ${name}: ${response.status} - ${JSON.stringify(data)}</p>`;
+            } catch (error) {
+                results.innerHTML += `<p>❌ ${name}: Error - ${error.message}</p>`;
+            }
+        }
+        
+        async function runTests() {
+            await testEndpoint('Health Check', '/health');
+            await testEndpoint('API Keys GET', '/api/settings/api-keys');
+            await testEndpoint('API Keys POST', '/api/settings/api-keys', {
+                method: 'POST',
+                body: JSON.stringify({
+                    openai_api_key: 'test-key'
+                })
+            });
+            await testEndpoint('Keywords Stats', '/api/keywords/stats');
+            await testEndpoint('Stores GET', '/api/stores/');
+            await testEndpoint('Stores POST', '/api/stores/', {
+                method: 'POST',
+                body: JSON.stringify({
+                    store_name: 'Test Store',
+                    shop_url: 'test.myshopify.com',
+                    access_token: 'test-token'
+                })
+            });
+        }
+        
+        runTests();
+    </script>
+</body>
+</html>

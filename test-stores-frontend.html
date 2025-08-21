@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stores Frontend Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        button { margin: 10px; padding: 10px; }
+        input { margin: 5px; padding: 8px; width: 200px; }
+        #results { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Shopify Stores Frontend Test</h1>
+    
+    <h3>Test Store Creation (simulating frontend form)</h3>
+    <div>
+        <input type="text" id="storeName" placeholder="Store Name" value="Frontend Test Store">
+        <input type="text" id="shopUrl" placeholder="Shop URL" value="frontend-test">
+        <input type="text" id="accessToken" placeholder="Access Token" value="test-token-frontend">
+        <input type="text" id="blogHandle" placeholder="Blog Handle" value="news">
+        <button onclick="createStore()">Save Store</button>
+    </div>
+    
+    <button onclick="loadStores()">Load Existing Stores</button>
+    <button onclick="clearResults()">Clear Results</button>
+    
+    <div id="results"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : '';
+            results.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+        }
+        
+        function clearResults() {
+            results.innerHTML = '';
+        }
+        
+        const getAuthHeaders = () => ({
+            'Authorization': 'Bearer fake-token',
+            'Content-Type': 'application/json',
+        });
+        
+        async function loadStores() {
+            log('🏪 Loading existing stores...');
+            try {
+                const response = await fetch(`${API_BASE}/api/stores/`, {
+                    headers: getAuthHeaders(),
+                });
+                
+                if (response.ok) {
+                    const stores = await response.json();
+                    log(`✅ Found ${stores.length} stores:`, 'success');
+                    stores.forEach(store => {
+                        log(`   - ${store.store_name} (${store.shop_url})`, 'success');
+                    });
+                } else {
+                    log(`❌ Failed to load stores: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error loading stores: ${error.message}`, 'error');
+            }
+        }
+        
+        async function createStore() {
+            const storeName = document.getElementById('storeName').value;
+            const shopUrl = document.getElementById('shopUrl').value;
+            const accessToken = document.getElementById('accessToken').value;
+            const blogHandle = document.getElementById('blogHandle').value;
+            
+            if (!storeName || !shopUrl || !accessToken) {
+                log('❌ Please fill in all required fields', 'error');
+                return;
+            }
+            
+            log('💾 Creating new store...');
+            try {
+                const response = await fetch(`${API_BASE}/api/stores/`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        store_name: storeName,
+                        shop_url: shopUrl,
+                        access_token: accessToken,
+                        blog_handle: blogHandle || 'news',
+                    }),
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ Store created successfully! ID: ${result.id}`, 'success');
+                    log(`   Store Name: ${result.store_name}`, 'success');
+                    log(`   Shop URL: ${result.shop_url}`, 'success');
+                    log(`   Blog Handle: ${result.blog_handle}`, 'success');
+                    
+                    // Clear form
+                    document.getElementById('storeName').value = '';
+                    document.getElementById('shopUrl').value = '';
+                    document.getElementById('accessToken').value = '';
+                    document.getElementById('blogHandle').value = 'news';
+                } else {
+                    const error = await response.json();
+                    log(`❌ Failed to create store: ${JSON.stringify(error)}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error creating store: ${error.message}`, 'error');
+            }
+        }
+        
+        // Auto-load stores on page load
+        window.onload = () => {
+            loadStores();
+        };
+    </script>
+</body>
+</html>

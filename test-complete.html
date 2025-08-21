@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Complete Integration Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { margin: 5px; padding: 10px; }
+        #results { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Complete Integration Test</h1>
+    <button onclick="testAll()">Test All Endpoints</button>
+    <button onclick="testAPIKeys()">Test API Keys</button>
+    <button onclick="testStores()">Test Stores</button>
+    <button onclick="testKeywords()">Test Keywords</button>
+    <button onclick="clearResults()">Clear Results</button>
+    
+    <div id="results"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString();
+            results.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            console.log(`[${type}] ${message}`);
+        }
+        
+        function clearResults() {
+            results.innerHTML = '';
+        }
+        
+        const getAuthHeaders = () => ({
+            'Authorization': 'Bearer fake-token',
+            'Content-Type': 'application/json',
+        });
+        
+        async function testAPIKeys() {
+            log('🔑 Testing API Keys...', 'info');
+            
+            try {
+                // Test GET
+                const getResponse = await fetch(`${API_BASE}/api/settings/api-keys`, {
+                    headers: getAuthHeaders(),
+                });
+                
+                if (getResponse.ok) {
+                    const data = await getResponse.json();
+                    log(`✅ API Keys GET success: ${JSON.stringify(data)}`, 'success');
+                } else {
+                    log(`❌ API Keys GET failed: ${getResponse.status}`, 'error');
+                }
+                
+                // Test POST
+                const postResponse = await fetch(`${API_BASE}/api/settings/api-keys`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        openai_api_key: 'sk-test-key-from-browser'
+                    }),
+                });
+                
+                if (postResponse.ok) {
+                    const result = await postResponse.json();
+                    log(`✅ API Keys POST success: ${JSON.stringify(result)}`, 'success');
+                } else {
+                    const error = await postResponse.json();
+                    log(`❌ API Keys POST failed: ${JSON.stringify(error)}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ API Keys test error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testStores() {
+            log('🏪 Testing Stores...', 'info');
+            
+            try {
+                // Test GET
+                const getResponse = await fetch(`${API_BASE}/api/stores/`, {
+                    headers: getAuthHeaders(),
+                });
+                
+                if (getResponse.ok) {
+                    const data = await getResponse.json();
+                    log(`✅ Stores GET success: Found ${data.length} stores`, 'success');
+                } else {
+                    log(`❌ Stores GET failed: ${getResponse.status}`, 'error');
+                }
+                
+                // Test POST
+                const postResponse = await fetch(`${API_BASE}/api/stores/`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        store_name: 'Browser Test Store',
+                        shop_url: 'browser-test.myshopify.com',
+                        access_token: 'test-token-browser',
+                        blog_handle: 'news'
+                    }),
+                });
+                
+                if (postResponse.ok) {
+                    const result = await postResponse.json();
+                    log(`✅ Stores POST success: Created store with ID ${result.id}`, 'success');
+                } else {
+                    const error = await postResponse.json();
+                    log(`❌ Stores POST failed: ${JSON.stringify(error)}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Stores test error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testKeywords() {
+            log('🔍 Testing Keywords...', 'info');
+            
+            try {
+                // Test stats
+                const statsResponse = await fetch(`${API_BASE}/api/keywords/stats`, {
+                    headers: getAuthHeaders(),
+                });
+                
+                if (statsResponse.ok) {
+                    const data = await statsResponse.json();
+                    log(`✅ Keywords stats success: ${data.total_keywords} total keywords`, 'success');
+                } else {
+                    log(`❌ Keywords stats failed: ${statsResponse.status}`, 'error');
+                }
+                
+                // Test upload
+                const csvContent = 'keyword\\nbrowser test keyword 1\\nbrowser test keyword 2';
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const file = new File([blob], 'test-keywords.csv', { type: 'text/csv' });
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('campaign_name', 'Browser Test Campaign');
+                formData.append('template_type', 'ecommerce_general');
+                
+                const uploadResponse = await fetch(`${API_BASE}/api/keywords/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer fake-token',
+                    },
+                    body: formData,
+                });
+                
+                if (uploadResponse.ok) {
+                    const result = await uploadResponse.json();
+                    log(`✅ Keywords upload success: Added ${result.keywords_added} keywords`, 'success');
+                } else {
+                    const error = await uploadResponse.json();
+                    log(`❌ Keywords upload failed: ${JSON.stringify(error)}`, 'error');
+                }
+                
+            } catch (error) {
+                log(`❌ Keywords test error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testAll() {
+            clearResults();
+            log('🚀 Starting complete integration test...', 'info');
+            
+            // Test health first
+            try {
+                const healthResponse = await fetch(`${API_BASE}/health`);
+                if (healthResponse.ok) {
+                    const health = await healthResponse.json();
+                    log(`✅ Health check passed: ${health.status}`, 'success');
+                } else {
+                    log(`❌ Health check failed`, 'error');
+                    return;
+                }
+            } catch (error) {
+                log(`❌ Cannot connect to backend: ${error.message}`, 'error');
+                return;
+            }
+            
+            await testAPIKeys();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await testStores();
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            await testKeywords();
+            
+            log('🎉 Integration test complete!', 'success');
+        }
+        
+        // Auto-run test on page load
+        window.onload = () => {
+            log('Page loaded, starting automatic test in 2 seconds...', 'info');
+            setTimeout(testAll, 2000);
+        };
+    </script>
+</body>
+</html>

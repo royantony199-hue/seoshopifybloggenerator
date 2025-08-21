@@ -1,0 +1,177 @@
+# SEO Blog Automation SaaS Platform
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: seo_saas_db
+      POSTGRES_USER: seo_user
+      POSTGRES_PASSWORD: seo_password_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - seo_network
+
+  # Redis for caching and background tasks
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - seo_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://seo_user:seo_password_123@db:5432/seo_saas_db
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-super-secret-key-change-in-production
+      DEBUG: "true"
+      ALLOWED_ORIGINS: '["http://localhost:3000", "http://localhost:3001"]'
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+      - /app/venv
+    networks:
+      - seo_network
+    restart: unless-stopped
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - seo_network
+    restart: unless-stopped
+
+  # Celery Worker for background tasks
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://seo_user:seo_password_123@db:5432/seo_saas_db
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: your-super-secret-key-change-in-production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+      - /app/venv
+    networks:
+      - seo_network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy (Production)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - seo_network
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  seo_network:
+    driver: bridge
+
+# Development override
+# Use: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+---
+# docker-compose.dev.yml
+version: '3.8'
+
+services:
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DEBUG: "true"
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    command: npm run dev
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+# Production override  
+# Use: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+---
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  backend:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    environment:
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      SENTRY_DSN: ${SENTRY_DSN}
+      
+  frontend:
+    command: npm run build && npm run preview
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL}
+      
+  worker:
+    command: celery -A app.celery worker --loglevel=warning --concurrency=4
+    
+  # Additional production services
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A app.celery flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+    depends_on:
+      - redis
+    networks:
+      - seo_network
+    profiles:
+      - production
