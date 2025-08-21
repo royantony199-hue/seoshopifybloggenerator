@@ -1,0 +1,17 @@
+{
+  "name": "SEO Blog Automation",
+  "description": "Multi-tenant SaaS for automated SEO blog generation",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "sleepApplication": false,
+    "restartPolicyType": "ON_FAILURE"
+  },
+  "variables": {
+    "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+    "SECRET_KEY": "${{RAILWAY_STATIC_URL}}-secret-key",
+    "ALLOWED_ORIGINS": "https://seo-dashboard.vercel.app,http://localhost:3000"
+  }
+}

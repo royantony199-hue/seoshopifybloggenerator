@@ -68,6 +68,7 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
 }
 
 interface AuthContextType extends AuthState {
+  isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (userData: any) => Promise<void>;
   logout: () => void;
@@ -82,22 +83,46 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check for existing token on app start - DEMO MODE
+  // Check for existing token on app start
   useEffect(() => {
-    // SKIP LOGIN - Set demo user automatically
-    const demoUser = {
-      id: 1,
-      email: 'demo@example.com',
-      first_name: 'Demo',
-      last_name: 'User',
-      role: 'admin',
-      tenant_id: 1,
-      tenant_name: 'Demo Company',
-      is_active: true
+    const checkAuthToken = async () => {
+      const token = localStorage.getItem('auth_token');
+      const userStr = localStorage.getItem('auth_user');
+      
+      if (token && userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          // Validate token with backend
+          const response = await fetch('/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          
+          if (response.ok) {
+            const userData = await response.json();
+            dispatch({ 
+              type: 'LOGIN_SUCCESS', 
+              payload: { user: userData, token } 
+            });
+          } else {
+            // Token is invalid, clear localStorage
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_user');
+            dispatch({ type: 'SET_LOADING', payload: false });
+          }
+        } catch (error) {
+          // Invalid token or user data, clear storage
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('auth_user');
+          dispatch({ type: 'SET_LOADING', payload: false });
+        }
+      } else {
+        dispatch({ type: 'SET_LOADING', payload: false });
+      }
     };
-    const demoToken = 'demo-token-for-testing';
     
-    dispatch({ type: 'LOGIN_SUCCESS', payload: { user: demoUser, token: demoToken } });
+    checkAuthToken();
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -108,7 +133,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       formData.append('username', email);
       formData.append('password', password);
 
-      const response = await fetch('/api/auth/login', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',
         body: formData,
       });
@@ -140,7 +166,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     dispatch({ type: 'LOGIN_START' });
     
     try {
-      const response = await fetch('/api/auth/register', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -179,6 +206,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     ...state,
+    isAuthenticated: !!state.token && !!state.user,
     login,
     register,
     logout,

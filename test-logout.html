@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Logout Button</title>
+</head>
+<body>
+    <h1>Test Authentication & Logout</h1>
+    
+    <script>
+    async function testAuth() {
+        try {
+            // Test if we can access the app without authentication
+            const response = await fetch('http://localhost:3000/');
+            console.log('Frontend access:', response.status);
+            
+            // Test logout by clearing localStorage
+            console.log('Clearing localStorage to simulate logout...');
+            fetch('http://localhost:3000/', {
+                method: 'GET',
+                credentials: 'include'
+            }).then(response => {
+                console.log('After localStorage clear:', response.status);
+            });
+            
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }
+    
+    testAuth();
+    </script>
+    
+    <p>Check the console for authentication test results.</p>
+    <p>To test logout:</p>
+    <ol>
+        <li>Open http://localhost:3000 in your browser</li>
+        <li>Register or login with a user</li>
+        <li>Click the user account icon in the top right</li>
+        <li>Click "Logout" from the dropdown menu</li>
+        <li>You should be redirected to /login</li>
+    </ol>
+</body>
+</html>

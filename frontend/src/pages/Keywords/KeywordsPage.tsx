@@ -28,7 +28,10 @@ import {
   DialogContent,
   DialogActions,
   Tabs,
-  Tab
+  Tab,
+  RadioGroup,
+  FormControlLabel,
+  Radio
 } from '@mui/material';
 import { 
   CloudUpload, 
@@ -46,6 +49,10 @@ import {
 import { useDropzone } from 'react-dropzone';
 import Papa from 'papaparse';
 import { keywordsApi, blogsApi, storesApi } from '../../services/api';
+import LoadingSpinner from '../../components/Loading/LoadingSpinner';
+import TableSkeleton from '../../components/Loading/TableSkeleton';
+import ErrorDialog from '../../components/Error/ErrorDialog';
+import { parseApiError, AppError } from '../../utils/errorHandling';
 
 interface Keyword {
   id?: number;
@@ -93,6 +100,10 @@ const KeywordsPage: React.FC = () => {
   const [uploadMessage, setUploadMessage] = useState('');
   const [campaignName, setCampaignName] = useState('');
   const [templateType, setTemplateType] = useState('ecommerce_general');
+  
+  // Manual keyword input state
+  const [manualKeywords, setManualKeywords] = useState('');
+  const [inputMethod, setInputMethod] = useState<'file' | 'manual'>('file');
 
   // Keywords Tab State
   const [keywords, setKeywords] = useState<Keyword[]>([]);
@@ -106,9 +117,21 @@ const KeywordsPage: React.FC = () => {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [autoPublish, setAutoPublish] = useState(false);
+  const [keywordLoading, setKeywordLoading] = useState<{ [key: number]: boolean }>({});
+  
+  // Error handling
+  const [currentError, setCurrentError] = useState<AppError | null>(null);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
 
   // Tab State
   const [tabValue, setTabValue] = useState(0);
+
+  // Helper function to show errors
+  const showError = (error: any, retryAction?: () => void) => {
+    const appError = parseApiError(error);
+    setCurrentError(appError);
+    setShowErrorDialog(true);
+  };
 
   // Load data on component mount
   useEffect(() => {
@@ -276,7 +299,42 @@ const KeywordsPage: React.FC = () => {
       console.error('Error stack:', error.stack);
       setUploadStatus('error');
       setUploadMessage(`Failed to upload keywords: ${error.message || 'Unknown error'}`);
+      showError(error, handleUpload);
     }
+  };
+
+  // Process manual keywords
+  const handleManualKeywords = () => {
+    if (!manualKeywords.trim()) {
+      setUploadMessage('Please enter some keywords');
+      setUploadStatus('error');
+      return;
+    }
+
+    setUploadStatus('uploading');
+    setUploadMessage('Processing your keywords...');
+
+    // Split keywords by line and clean them up
+    const keywordLines = manualKeywords
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    const parsedKeywords: Keyword[] = keywordLines.map(line => {
+      // Check if line has comma-separated values (keyword, volume, category, difficulty)
+      const parts = line.split(',').map(part => part.trim());
+      
+      return {
+        keyword: parts[0] || '',
+        search_volume: parts[1] ? parseInt(parts[1]) || undefined : undefined,
+        category: parts[2] || 'General',
+        keyword_difficulty: parts[3] ? parseFloat(parts[3]) || undefined : undefined
+      };
+    }).filter(kw => kw.keyword.length > 0);
+
+    setUploadedKeywords(parsedKeywords);
+    setUploadStatus('success');
+    setUploadMessage(`Successfully processed ${parsedKeywords.length} keywords!`);
   };
 
   // Keyword selection
@@ -387,7 +445,7 @@ const KeywordsPage: React.FC = () => {
   // Retry individual failed keyword
   const handleRetryIndividualKeyword = async (keywordId: number, keywordText: string) => {
     try {
-      setGenerating(true);
+      setKeywordLoading(prev => ({ ...prev, [keywordId]: true }));
       
       // First, reset the keyword to pending status
       const resetResult = await keywordsApi.resetKeyword(keywordId);
@@ -412,9 +470,9 @@ const KeywordsPage: React.FC = () => {
       
     } catch (error: any) {
       console.error('Failed to retry keyword:', error);
-      alert(`❌ Failed to retry "${keywordText}": ${error.message}`);
+      showError(error, () => handleRetryIndividualKeyword(keywordId, keywordText));
     } finally {
-      setGenerating(false);
+      setKeywordLoading(prev => ({ ...prev, [keywordId]: false }));
     }
   };
 
@@ -558,12 +616,12 @@ const KeywordsPage: React.FC = () => {
 
               <Button
                 variant="contained"
-                startIcon={<Article />}
+                startIcon={generating ? <LoadingSpinner size="small" /> : <Article />}
                 onClick={() => setGenerateDialogOpen(true)}
-                disabled={selectedEligibleCount === 0}
+                disabled={selectedEligibleCount === 0 || generating}
                 color="primary"
               >
-                Generate {selectedEligibleCount} Blogs
+                {generating ? 'Generating...' : `Generate ${selectedEligibleCount} Blogs`}
               </Button>
             </Box>
           </CardContent>
@@ -577,7 +635,13 @@ const KeywordsPage: React.FC = () => {
             </Typography>
             
             {loadingKeywords ? (
-              <LinearProgress sx={{ my: 2 }} />
+              <TableSkeleton rows={8} columns={9} />
+            ) : keywords.length === 0 ? (
+              <Box textAlign="center" py={4}>
+                <Typography variant="body1" color="textSecondary">
+                  No keywords uploaded yet. Upload a CSV file or add keywords manually to get started.
+                </Typography>
+              </Box>
             ) : (
               <TableContainer component={Paper} sx={{ maxHeight: 600 }}>
                 <Table stickyHeader>
@@ -671,7 +735,7 @@ const KeywordsPage: React.FC = () => {
                                 <Button
                                   size="small"
                                   variant="contained"
-                                  startIcon={<Article />}
+                                  startIcon={keywordLoading[keyword.id!] ? <LoadingSpinner size="small" /> : <Article />}
                                   onClick={() => {
                                     // If failed, first reset the keyword, then generate
                                     if (keyword.status === 'failed') {
@@ -681,9 +745,15 @@ const KeywordsPage: React.FC = () => {
                                       setGenerateDialogOpen(true);
                                     }
                                   }}
+                                  disabled={keywordLoading[keyword.id!] || generating}
                                   color={keyword.status === 'failed' ? 'warning' : 'primary'}
                                 >
-                                  {keyword.status === 'failed' ? 'Retry Blog' : 'Generate Blog'}
+                                  {keywordLoading[keyword.id!] 
+                                    ? 'Processing...' 
+                                    : keyword.status === 'failed' 
+                                    ? 'Retry Blog' 
+                                    : 'Generate Blog'
+                                  }
                                 </Button>
                               ) : (
                                 <Chip
@@ -724,36 +794,83 @@ const KeywordsPage: React.FC = () => {
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  Upload Keywords from File
+                  Add Keywords
                 </Typography>
                 
-                <Box
-                  {...getRootProps()}
-                  sx={{
-                    border: '2px dashed',
-                    borderColor: isDragActive ? 'primary.main' : 'grey.300',
-                    borderRadius: 2,
-                    p: 4,
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    bgcolor: isDragActive ? 'primary.light' : 'background.paper',
-                    '&:hover': {
-                      bgcolor: 'grey.50',
-                    },
-                  }}
-                >
-                  <input {...getInputProps()} />
-                  <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                  <Typography variant="h6" gutterBottom>
-                    {isDragActive ? 'Drop your file here' : 'Drag & drop your keyword file'}
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Supports CSV, XLS, XLSX files with keyword data
-                  </Typography>
-                  <Button variant="outlined" sx={{ mt: 2 }}>
-                    Browse Files
-                  </Button>
-                </Box>
+                <FormControl component="fieldset" sx={{ mb: 3 }}>
+                  <RadioGroup
+                    row
+                    value={inputMethod}
+                    onChange={(e) => {
+                      setInputMethod(e.target.value as 'file' | 'manual');
+                      setUploadedKeywords([]);
+                      setUploadStatus('idle');
+                      setUploadMessage('');
+                      setManualKeywords('');
+                    }}
+                  >
+                    <FormControlLabel value="file" control={<Radio />} label="Upload from File" />
+                    <FormControlLabel value="manual" control={<Radio />} label="Enter Manually" />
+                  </RadioGroup>
+                </FormControl>
+                
+                {inputMethod === 'file' ? (
+                  <Box
+                    {...getRootProps()}
+                    sx={{
+                      border: '2px dashed',
+                      borderColor: isDragActive ? 'primary.main' : 'grey.300',
+                      borderRadius: 2,
+                      p: 4,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      bgcolor: isDragActive ? 'primary.light' : 'background.paper',
+                      '&:hover': {
+                        bgcolor: 'grey.50',
+                      },
+                    }}
+                  >
+                    <input {...getInputProps()} />
+                    <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                    <Typography variant="h6" gutterBottom>
+                      {isDragActive ? 'Drop your file here' : 'Drag & drop your keyword file'}
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      Supports CSV, XLS, XLSX files with keyword data
+                    </Typography>
+                    <Button variant="outlined" sx={{ mt: 2 }}>
+                      Browse Files
+                    </Button>
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="body2" gutterBottom sx={{ mb: 2 }}>
+                      Enter one keyword per line. You can optionally include additional data separated by commas:<br />
+                      <strong>Format:</strong> keyword, search_volume, category, difficulty
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      multiline
+                      rows={8}
+                      value={manualKeywords}
+                      onChange={(e) => setManualKeywords(e.target.value)}
+                      placeholder={`CBD oil for pain
+best CBD gummies, 15000, Health, 35
+CBD for sleep, 12000, Sleep, 40
+organic CBD products, 8500, Wellness, 42`}
+                      variant="outlined"
+                      sx={{ mb: 2 }}
+                    />
+                    <Button
+                      variant="contained"
+                      onClick={handleManualKeywords}
+                      startIcon={<CloudUpload />}
+                      disabled={!manualKeywords.trim() || uploadStatus === 'uploading'}
+                    >
+                      {uploadStatus === 'uploading' ? 'Processing...' : 'Process Keywords'}
+                    </Button>
+                  </Box>
+                )}
 
                 <Box sx={{ mt: 3 }}>
                   <Grid container spacing={2}>
@@ -805,35 +922,62 @@ const KeywordsPage: React.FC = () => {
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
-                  File Format Guide
+                  {inputMethod === 'file' ? 'File Format Guide' : 'Manual Input Guide'}
                 </Typography>
-                <Typography variant="body2" paragraph>
-                  Your CSV/Excel file should contain these columns:
-                </Typography>
-                <Box component="ul" sx={{ pl: 2 }}>
-                  <li><strong>keyword</strong> (required)</li>
-                  <li><strong>search_volume</strong> (optional)</li>
-                  <li><strong>keyword_difficulty</strong> (optional)</li>
-                  <li><strong>category</strong> (optional)</li>
-                </Box>
                 
-                <Button
-                  variant="outlined"
-                  fullWidth
-                  startIcon={<Download />}
-                  sx={{ mt: 2 }}
-                  onClick={() => {
-                    const csvContent = 'keyword,search_volume,category,keyword_difficulty\nCBD gummies for pain,18100,Pain Relief,45\nCBD for sleep,14800,Sleep Disorders,40';
-                    const blob = new Blob([csvContent], { type: 'text/csv' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'keyword_template.csv';
-                    a.click();
-                  }}
-                >
-                  Download Template
-                </Button>
+                {inputMethod === 'file' ? (
+                  <>
+                    <Typography variant="body2" paragraph>
+                      Your CSV/Excel file should contain these columns:
+                    </Typography>
+                    <Box component="ul" sx={{ pl: 2 }}>
+                      <li><strong>keyword</strong> (required)</li>
+                      <li><strong>search_volume</strong> (optional)</li>
+                      <li><strong>keyword_difficulty</strong> (optional)</li>
+                      <li><strong>category</strong> (optional)</li>
+                    </Box>
+                    
+                    <Button
+                      variant="outlined"
+                      fullWidth
+                      startIcon={<Download />}
+                      sx={{ mt: 2 }}
+                      onClick={() => {
+                        const csvContent = 'keyword,search_volume,category,keyword_difficulty\nCBD gummies for pain,18100,Pain Relief,45\nCBD for sleep,14800,Sleep Disorders,40';
+                        const blob = new Blob([csvContent], { type: 'text/csv' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'keyword_template.csv';
+                        a.click();
+                      }}
+                    >
+                      Download Template
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="body2" paragraph>
+                      Enter keywords in these formats:
+                    </Typography>
+                    <Box sx={{ bgcolor: 'grey.50', p: 2, borderRadius: 1, mb: 2 }}>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                        Simple format:<br />
+                        CBD oil<br />
+                        Best CBD gummies<br /><br />
+                        
+                        With additional data:<br />
+                        CBD oil, 15000, Health, 40<br />
+                        Best CBD gummies, 8500, Products, 35
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="textSecondary">
+                      • One keyword per line<br />
+                      • Additional data: search_volume, category, difficulty<br />
+                      • All fields after keyword are optional
+                    </Typography>
+                  </>
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -948,6 +1092,17 @@ const KeywordsPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Error Dialog */}
+      <ErrorDialog
+        open={showErrorDialog}
+        onClose={() => setShowErrorDialog(false)}
+        error={currentError}
+        onRetry={() => {
+          setShowErrorDialog(false);
+          // Retry action would be handled by the stored retry function
+        }}
+      />
     </Container>
   );
 };

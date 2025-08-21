@@ -19,6 +19,10 @@ import {
   Speed,
   CloudUpload,
   Description,
+  Store,
+  Settings,
+  PlayArrow,
+  AutoAwesome,
 } from '@mui/icons-material';
 import { keywordsApi, blogsApi } from '../../services/api';
 
@@ -76,7 +80,15 @@ const DashboardPage: React.FC = () => {
   };
 
   const handleGenerateBlogs = () => {
-    navigate('/keywords?tab=1'); // Go to manage keywords tab
+    navigate('/keywords'); // Go to manage keywords tab
+  };
+
+  const handleConnectShopify = () => {
+    navigate('/settings'); // Go to settings page
+  };
+
+  const handleViewBlogs = () => {
+    navigate('/blogs');
   };
 
   return (
@@ -169,45 +181,118 @@ const DashboardPage: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* Welcome Card */}
+      {/* Quick Start Guide */}
       <Card>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Welcome to SEO Blog Automation SaaS! 🚀
+            Get Started with SEO Blog Automation 🚀
           </Typography>
           <Typography variant="body1" color="textSecondary" paragraph>
-            Your multi-tenant platform for automated SEO blog generation and Shopify publishing is ready.
+            Follow these simple steps to start generating and publishing SEO-optimized blogs to your Shopify store.
           </Typography>
           
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Quick Start:
-            </Typography>
-            <Typography component="div">
-              1. <strong>Connect your Shopify store</strong> - Add store credentials<br/>
-              2. <strong>Upload keywords</strong> - Import CSV/Excel files<br/>
-              3. <strong>Generate blogs</strong> - High-quality, SEO-optimized content<br/>
-              4. <strong>Auto-publish</strong> - Direct to your Shopify blog
-            </Typography>
-          </Box>
-          
-          <Box sx={{ mt: 3 }}>
-            <Button 
-              variant="contained" 
-              size="large" 
-              sx={{ mr: 2 }} 
-              startIcon={<CloudUpload />}
-              onClick={handleUploadKeywords}
-            >
-              Upload Keywords
-            </Button>
+          <Grid container spacing={3} sx={{ mt: 2 }}>
+            {/* Step 1: Connect Shopify */}
+            <Grid item xs={12} md={6} lg={3}>
+              <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
+                  <Store sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    1. Connect Shopify Store
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary" paragraph>
+                    Add your Shopify store credentials to enable blog publishing
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    fullWidth
+                    startIcon={<Settings />}
+                    onClick={handleConnectShopify}
+                  >
+                    Connect Store
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Step 2: Upload Keywords */}
+            <Grid item xs={12} md={6} lg={3}>
+              <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
+                  <CloudUpload sx={{ fontSize: 48, color: 'secondary.main', mb: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    2. Add Keywords
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary" paragraph>
+                    Import your target keywords from CSV files or add them manually
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    fullWidth
+                    startIcon={<CloudUpload />}
+                    onClick={handleUploadKeywords}
+                  >
+                    Add Keywords
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Step 3: Generate Blogs */}
+            <Grid item xs={12} md={6} lg={3}>
+              <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
+                  <AutoAwesome sx={{ fontSize: 48, color: 'success.main', mb: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    3. Generate Blogs
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary" paragraph>
+                    Create SEO-optimized blog posts with AI-powered content generation
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    fullWidth
+                    startIcon={<PlayArrow />}
+                    onClick={handleGenerateBlogs}
+                  >
+                    Generate Blogs
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Step 4: View & Publish */}
+            <Grid item xs={12} md={6} lg={3}>
+              <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
+                  <Article sx={{ fontSize: 48, color: 'warning.main', mb: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    4. View & Publish
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary" paragraph>
+                    Review generated blogs and publish them to your Shopify store
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    fullWidth
+                    startIcon={<Article />}
+                    onClick={handleViewBlogs}
+                  >
+                    View Blogs
+                  </Button>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          <Box sx={{ mt: 3, textAlign: 'center' }}>
             <Button 
               variant="outlined" 
               size="large"
               startIcon={<Description />}
               onClick={handleViewDocs}
             >
-              View Documentation
+              View Full Documentation
             </Button>
           </Box>
         </CardContent>

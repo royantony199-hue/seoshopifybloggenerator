@@ -1,0 +1,31 @@
+{
+  "name": "seo-blog-automation-saas",
+  "version": 2,
+  "builds": [
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "frontend/$1"
+    }
+  ],
+  "env": {
+    "VITE_API_URL": "https://your-backend-domain.com",
+    "VITE_ENVIRONMENT": "production",
+    "VITE_APP_NAME": "SEO Blog Automation SaaS",
+    "VITE_APP_VERSION": "1.0.0"
+  },
+  "build": {
+    "env": {
+      "VITE_API_URL": "https://your-backend-domain.com",
+      "VITE_ENVIRONMENT": "production"
+    }
+  }
+}

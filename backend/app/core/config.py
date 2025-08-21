@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "SEO Blog Automation SaaS"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    ENVIRONMENT: str = "development"
     
     # Database
     DATABASE_URL: str = "sqlite:///./seo_saas.db"
@@ -27,14 +28,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # CORS
-    ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001", 
-        "https://yourdomain.com"
-    ]
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://yourdomain.com"
+    
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        """Parse comma-separated origins string into list"""
+        if isinstance(self.ALLOWED_ORIGINS, str):
+            return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',')]
+        return self.ALLOWED_ORIGINS
     
     # External APIs  
     OPENAI_API_KEY: Optional[str] = None
+    SERPER_API_KEY: Optional[str] = None
     
     # Default for missing env var
     SENTRY_DSN: Optional[str] = None
@@ -76,6 +81,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra fields from .env
 
 # Create global settings instance
 settings = Settings()

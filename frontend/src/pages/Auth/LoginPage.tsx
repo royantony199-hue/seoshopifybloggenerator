@@ -9,7 +9,7 @@ import {
   Box,
   Alert,
 } from '@mui/material';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 
 const LoginPage: React.FC = () => {

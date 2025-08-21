@@ -13,7 +13,6 @@ import RegisterPage from './pages/Auth/RegisterPage';
 import DashboardPage from './pages/Dashboard/DashboardPage';
 import KeywordsPage from './pages/Keywords/KeywordsPage';
 import BlogsPage from './pages/Blogs/BlogsPage';
-import StoresPage from './pages/Stores/StoresPage';
 import SettingsPage from './pages/Settings/SettingsPage';
 import BillingPage from './pages/Billing/BillingPage';
 import OnboardingPage from './pages/Onboarding/OnboardingPage';
@@ -75,16 +74,42 @@ const queryClient = new QueryClient({
   },
 });
 
-// Protected Route Component - BYPASSED FOR DEMO
+// Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // SKIP LOGIN - Go directly to dashboard
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        Loading...
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
   return <>{children}</>;
 };
 
-// Public Route Component - BYPASSED FOR DEMO
+// Public Route Component  
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // SKIP LOGIN - Always redirect to dashboard
-  return <Navigate to="/dashboard" replace />;
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        Loading...
+      </div>
+    );
+  }
+  
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  return <>{children}</>;
 };
 
 function App() {
@@ -127,7 +152,6 @@ function App() {
                 <Route path="onboarding" element={<OnboardingPage />} />
                 <Route path="keywords" element={<KeywordsPage />} />
                 <Route path="blogs" element={<BlogsPage />} />
-                <Route path="stores" element={<StoresPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="billing" element={<BillingPage />} />
               </Route>
