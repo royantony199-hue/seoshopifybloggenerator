@@ -230,8 +230,12 @@ const KeywordsPage: React.FC = () => {
   });
 
   const handleUploadToBackend = async () => {
+    console.log('Upload process started');
+    console.log('Uploaded keywords:', uploadedKeywords);
+    
     if (uploadedKeywords.length === 0) {
       setUploadMessage('No keywords to upload');
+      setUploadStatus('error');
       return;
     }
 
@@ -239,9 +243,18 @@ const KeywordsPage: React.FC = () => {
     setUploadMessage('Uploading keywords to server...');
 
     try {
+      console.log('Creating CSV content...');
       const csvContent = Papa.unparse(uploadedKeywords);
+      console.log('CSV content:', csvContent);
+      
       const blob = new Blob([csvContent], { type: 'text/csv' });
       const file = new File([blob], 'keywords.csv', { type: 'text/csv' });
+      console.log('File created:', file);
+
+      console.log('Calling API with params:', {
+        campaignName: campaignName || 'Uploaded Keywords',
+        templateType
+      });
 
       const result = await keywordsApi.uploadKeywords(
         file,
@@ -250,6 +263,7 @@ const KeywordsPage: React.FC = () => {
         templateType
       );
 
+      console.log('Upload result:', result);
       setUploadStatus('success');
       setUploadMessage(`Successfully uploaded ${result.keywords_added} keywords!`);
       setUploadedKeywords([]);
@@ -257,9 +271,11 @@ const KeywordsPage: React.FC = () => {
       // Refresh keywords list
       loadKeywords();
       loadKeywordStats();
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Upload error details:', error);
+      console.error('Error stack:', error.stack);
       setUploadStatus('error');
-      setUploadMessage('Failed to upload keywords to server');
+      setUploadMessage(`Failed to upload keywords: ${error.message || 'Unknown error'}`);
     }
   };
 
