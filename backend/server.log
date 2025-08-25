@@ -1,2 +1,21 @@
 INFO:     Will watch for changes in these directories: ['/Users/royantony/blue-lotus-seo/saas-platform/backend']
-ERROR:    [Errno 48] Address already in use
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [94017] using WatchFiles
+INFO:     Started server process [94020]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:57443 - "GET /api/keywords/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57493 - "GET /api/keywords/?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57552 - "POST /api/auth/token HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57554 - "GET /api/ai-calendar/debug/auth-status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57598 - "POST /api/auth/token HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57599 - "GET /api/ai-calendar/debug/auth-status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57648 - "POST /api/auth/token HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57649 - "GET /api/ai-calendar/debug/auth-status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:57650 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57653 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [94020]
+INFO:     Stopping reloader process [94017]

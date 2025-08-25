@@ -11,8 +11,11 @@ from datetime import datetime
 import time
 import openai
 import requests
+import base64
+import io
+from PIL import Image
 
-from app.core.database import get_db, GeneratedBlog, Keyword, ShopifyStore, KeywordCampaign, Tenant
+from app.core.database import get_db, GeneratedBlog, Keyword, ShopifyStore, KeywordCampaign, Tenant, Product
 from app.routers.auth import get_current_user, User
 from app.routers.demo_auth import get_demo_current_user
 from app.core.config import settings, BLOG_TEMPLATES
@@ -36,6 +39,8 @@ class BlogResponse(BaseModel):
     published: bool
     created_at: datetime
     published_at: Optional[datetime]
+    featured_image_url: Optional[str]
+    image_generated: bool
 
 class BlogContent(BaseModel):
     id: int
@@ -44,6 +49,8 @@ class BlogContent(BaseModel):
     meta_description: Optional[str]
     word_count: int
     live_url: Optional[str]
+    featured_image_url: Optional[str]
+    image_generated: bool
 
 class BatchGenerateResponse(BaseModel):
     success: bool
@@ -111,7 +118,27 @@ class BlogGenerator:
         """Build comprehensive blog generation prompt"""
         
         product_integration = ""
-        if store_info.get("default_product_url"):
+        
+        # Use new products system if available, fallback to old system
+        if store_info.get("products") and len(store_info["products"]) > 0:
+            products = store_info["products"]
+            product_links = []
+            for product in products:
+                link_text = product.get("integration_text", f"For premium {product['name'].lower()}")
+                if product.get("price"):
+                    link_text += f" (Starting at {product['price']})"
+                # Create proper HTML link
+                html_link = f'<a href="{product["url"]}" target="_blank" rel="noopener">{link_text}</a>'
+                product_links.append(html_link)
+            
+            product_integration = f"""
+            - MUST naturally integrate these specific product recommendations as CLICKABLE LINKS throughout the content:
+              {chr(10).join([f"  * {link}" for link in product_links])}
+            - Place product recommendations contextually within relevant sections
+            - Use varied language like "Check out our", "Consider our", "For best results try our", "Recommended", etc.
+            - IMPORTANT: Include the full HTML <a> tags exactly as shown above for clickable links
+            """
+        elif store_info.get("default_product_url"):
             product_integration = f"""
             - Naturally integrate this product recommendation: "{store_info.get('product_integration_text', f'For premium quality products, check out: {store_info["default_product_url"]}')}"
             """
@@ -194,6 +221,66 @@ Target minimum {template["min_words"]} words with exceptional quality and depth.
             meta_desc = meta_desc[:155] + "..."
         
         return f"Complete guide to {keyword}. {meta_desc}"
+    
+    def generate_featured_image(self, keyword: str, store_info: dict) -> dict:
+        """Generate a featured image using OpenAI DALL-E"""
+        try:
+            # Create a professional, SEO-optimized image prompt
+            image_prompt = self._build_image_prompt(keyword, store_info)
+            
+            response = self.client.images.generate(
+                model="dall-e-3",
+                prompt=image_prompt,
+                size="1024x1024",
+                quality="standard",
+                n=1
+            )
+            
+            image_url = response.data[0].url
+            
+            # Download the image
+            image_response = requests.get(image_url)
+            if image_response.status_code == 200:
+                return {
+                    "success": True,
+                    "image_data": image_response.content,
+                    "image_url": image_url,
+                    "prompt_used": image_prompt
+                }
+            else:
+                return {"success": False, "error": "Failed to download generated image"}
+                
+        except Exception as e:
+            # Return a fallback - no image generated
+            return {"success": False, "error": f"Image generation failed: {str(e)}"}
+    
+    def _build_image_prompt(self, keyword: str, store_info: dict) -> str:
+        """Build image generation prompt based on keyword"""
+        
+        keyword_lower = keyword.lower()
+        
+        # Base professional style
+        base_style = "Professional, clean, modern design with soft lighting and calming colors"
+        
+        # Customize based on keyword category
+        if any(term in keyword_lower for term in ['sleep', 'insomnia', 'bedtime', 'rest']):
+            scene = "peaceful bedroom scene with soft pillows, warm lighting, and serene atmosphere"
+        elif any(term in keyword_lower for term in ['cbd', 'hemp', 'cannabis']):
+            scene = "natural hemp leaves and CBD oil bottles on white background with green accents"
+        elif any(term in keyword_lower for term in ['anxiety', 'stress', 'calm', 'relax']):
+            scene = "zen-like meditation space with plants, soft textures, and peaceful ambiance"
+        elif any(term in keyword_lower for term in ['pain', 'headache', 'inflammation']):
+            scene = "wellness concept with natural remedies, herbs, and healing elements"
+        else:
+            scene = "health and wellness theme with natural elements, soft colors, and modern design"
+        
+        prompt = f"""Create a {base_style} image featuring {scene}. 
+        The image should be suitable for a health and wellness blog post about '{keyword}'.
+        Style: Professional photography, high quality, suitable for web publication.
+        Colors: Soft, calming palette with blues, greens, and warm neutrals.
+        No text or logos in the image. Clean, minimalist composition."""
+        
+        return prompt
 
 class ShopifyPublisher:
     """Shopify blog publishing engine"""
@@ -206,7 +293,7 @@ class ShopifyPublisher:
             'Content-Type': 'application/json'
         }
     
-    def publish_blog(self, title: str, content: str, handle: str) -> dict:
+    def publish_blog(self, title: str, content: str, handle: str, keyword: str = None, image_data: bytes = None, image_url: str = None) -> dict:
         """Publish blog to Shopify"""
         
         try:
@@ -241,6 +328,32 @@ class ShopifyPublisher:
             if not target_blog:
                 raise Exception(f"Blog with handle '{self.store_info['blog_handle']}' not found")
             
+            # Generate dynamic SEO tags based on keyword
+            seo_tags = self._generate_seo_tags(keyword)
+            
+            # Embed featured image directly in content if available
+            if image_url:
+                print(f"DEBUG: Embedding image URL: {image_url}")
+                # Create featured image HTML tag
+                featured_image_html = f'''<div style="text-align: center; margin: 20px 0;">
+    <img src="{image_url}" alt="Featured image for {title}" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+</div>'''
+                
+                # Insert the image after the first paragraph
+                if '<p>' in content:
+                    # Find the end of the first paragraph and insert image
+                    first_p_end = content.find('</p>') + 4
+                    content = content[:first_p_end] + featured_image_html + content[first_p_end:]
+                    print(f"DEBUG: Image inserted after first paragraph at position {first_p_end}")
+                else:
+                    # Fallback: add at the beginning of body
+                    body_start = content.find('<body>') + 6
+                    if body_start > 5:
+                        content = content[:body_start] + featured_image_html + content[body_start:]
+                        print(f"DEBUG: Image inserted at body start position {body_start}")
+                    else:
+                        print("DEBUG: Could not find insertion point for image")
+            
             # Create the article
             article_data = {
                 "article": {
@@ -248,35 +361,140 @@ class ShopifyPublisher:
                     "body_html": content,
                     "handle": handle,
                     "published": True,
-                    "tags": "SEO, Automated Content"
+                    "tags": seo_tags
                 }
             }
             
-            response = requests.post(
-                f"{self.api_base}/blogs/{target_blog['id']}/articles.json",
-                headers=self.headers,
-                json=article_data
-            )
-            
-            if response.status_code == 201:
-                article = response.json()['article']
-                # Use the actual domain instead of .myshopify.com
-                live_url = f"https://www.imaginal.tech/blogs/{self.store_info['blog_handle']}/{handle}"
+            try:
+                response = requests.post(
+                    f"{self.api_base}/blogs/{target_blog['id']}/articles.json",
+                    headers=self.headers,
+                    json=article_data,
+                    timeout=30
+                )
                 
-                return {
-                    "success": True,
-                    "article_id": str(article['id']),
-                    "live_url": live_url,
-                    "demo_mode": False
-                }
-            else:
-                raise Exception(f"Shopify API error: {response.status_code} - {response.text}")
+                if response.status_code == 201:
+                    article = response.json()['article']
+                    # Use the actual domain instead of .myshopify.com
+                    live_url = f"https://www.imaginal.tech/blogs/{self.store_info['blog_handle']}/{handle}"
+                    
+                    return {
+                        "success": True,
+                        "article_id": str(article['id']),
+                        "live_url": live_url,
+                        "demo_mode": False
+                    }
+                else:
+                    error_msg = f"Shopify API error: {response.status_code} - {response.text}"
+                    print(f"Shopify publish error: {error_msg}")
+                    raise Exception(error_msg)
+                    
+            except requests.exceptions.RequestException as e:
+                error_msg = f"Request failed: {str(e)}"
+                print(f"Network error during publish: {error_msg}")
+                raise Exception(error_msg)
                 
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e)
             }
+    
+    def _generate_seo_tags(self, keyword: str = None) -> str:
+        """Generate relevant SEO tags based on keyword"""
+        if not keyword:
+            return "SEO, Blog Content, Health & Wellness"
+        
+        # Base tags that always apply
+        base_tags = ["SEO", "Health & Wellness", "Blog Content"]
+        
+        # Extract relevant terms from keyword for additional tags
+        keyword_lower = keyword.lower()
+        additional_tags = []
+        
+        # Sleep-related keywords
+        if any(term in keyword_lower for term in ['sleep', 'insomnia', 'bedtime', 'rest', 'dream']):
+            additional_tags.extend(['Sleep Health', 'Better Sleep', 'Sleep Tips'])
+        
+        # CBD/Cannabis related
+        if any(term in keyword_lower for term in ['cbd', 'hemp', 'cannabis', 'cannabinoid']):
+            additional_tags.extend(['CBD', 'Natural Wellness', 'Hemp Products'])
+        
+        # Anxiety/Stress related
+        if any(term in keyword_lower for term in ['anxiety', 'stress', 'calm', 'relax']):
+            additional_tags.extend(['Mental Health', 'Stress Relief', 'Natural Remedies'])
+        
+        # Pain/Inflammation related  
+        if any(term in keyword_lower for term in ['pain', 'inflammation', 'headache', 'migraine']):
+            additional_tags.extend(['Pain Relief', 'Natural Healing', 'Wellness Solutions'])
+        
+        # Wellness/Health general
+        if any(term in keyword_lower for term in ['health', 'wellness', 'natural', 'organic']):
+            additional_tags.extend(['Natural Health', 'Wellness', 'Holistic Health'])
+        
+        # Combine base tags with additional relevant tags (limit to 8 total)
+        all_tags = base_tags + additional_tags
+        final_tags = list(dict.fromkeys(all_tags))[:8]  # Remove duplicates and limit
+        
+        return ", ".join(final_tags)
+    
+    def _upload_image(self, image_data: bytes, filename: str) -> dict:
+        """Upload image to Shopify and return image ID"""
+        try:
+            # For blog articles in Shopify, we need to use a different approach
+            # We'll upload the image as a file asset first
+            
+            # Convert image to base64
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+            
+            # Upload as file asset to Shopify files
+            files_payload = {
+                "asset": {
+                    "key": f"assets/{filename}.jpg",
+                    "value": image_base64
+                }
+            }
+            
+            # Get current theme ID first
+            themes_response = requests.get(
+                f"{self.api_base}/themes.json",
+                headers=self.headers
+            )
+            
+            if themes_response.status_code != 200:
+                return {"success": False, "error": f"Failed to get themes: {themes_response.text}"}
+            
+            themes = themes_response.json().get('themes', [])
+            current_theme = None
+            for theme in themes:
+                if theme.get('role') == 'main':
+                    current_theme = theme
+                    break
+            
+            if not current_theme:
+                return {"success": False, "error": "No main theme found"}
+            
+            # Upload to theme assets
+            upload_response = requests.put(
+                f"{self.api_base}/themes/{current_theme['id']}/assets.json",
+                headers=self.headers,
+                json=files_payload
+            )
+            
+            if upload_response.status_code == 200:
+                # Create the public URL for the uploaded image
+                public_url = f"https://{self.store_info['shop_url']}.myshopify.com/cdn/shop/files/{filename}.jpg"
+                
+                return {
+                    "success": True,
+                    "image_id": None,  # Shopify articles use URLs, not IDs for external images
+                    "image_url": public_url
+                }
+            else:
+                return {"success": False, "error": f"Image upload failed: {upload_response.text}"}
+                
+        except Exception as e:
+            return {"success": False, "error": f"Image upload error: {str(e)}"}
 
 def generate_single_blog(
     keyword_id: int,
@@ -284,10 +502,18 @@ def generate_single_blog(
     template_type: str,
     auto_publish: bool,
     tenant_id: int,
-    openai_api_key: str,
-    db: Session
+    openai_api_key: str
 ):
     """Background task to generate a single blog"""
+    
+    # Create new database session for this background task
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.core.config import settings
+    
+    engine = create_engine(settings.DATABASE_URL)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
     
     try:
         # Get keyword and store info
@@ -301,6 +527,28 @@ def generate_single_blog(
         keyword.status = "processing"
         db.commit()
         
+        # Find matching products for this keyword
+        matching_products = db.query(Product).filter(
+            Product.tenant_id == tenant_id,
+            Product.store_id == store_id,
+            Product.is_active == True,
+            Product.keywords.ilike(f"%{keyword.keyword}%")
+        ).order_by(Product.priority.desc()).limit(3).all()
+        
+        # If no keyword match, try partial matches
+        if not matching_products:
+            keyword_words = keyword.keyword.lower().split()
+            for word in keyword_words:  # Try ALL words, not just first 3
+                if len(word) >= 3:  # Only meaningful words
+                    matching_products = db.query(Product).filter(
+                        Product.tenant_id == tenant_id,
+                        Product.store_id == store_id,
+                        Product.is_active == True,
+                        Product.keywords.ilike(f"%{word}%")
+                    ).order_by(Product.priority.desc()).limit(2).all()
+                    if matching_products:
+                        break
+        
         # Generate blog content
         generator = BlogGenerator(openai_api_key)
         
@@ -309,10 +557,23 @@ def generate_single_blog(
             "blog_handle": store.blog_handle,
             "default_product_url": store.default_product_url,
             "product_integration_text": store.product_integration_text,
-            "template_type": template_type
+            "template_type": template_type,
+            "products": [
+                {
+                    "name": p.name,
+                    "url": p.url,
+                    "price": p.price,
+                    "integration_text": p.integration_text or f"For premium {p.name.lower()}, visit: {p.url}"
+                }
+                for p in matching_products
+            ]
         }
         
         result = generator.generate_blog_content(keyword.keyword, {"template_type": template_type}, store_info)
+        
+        # Generate featured image
+        image_result = generator.generate_featured_image(keyword.keyword, store_info)
+        image_data = image_result.get("image_data") if image_result.get("success") else None
         
         # Create blog record
         blog = GeneratedBlog(
@@ -326,7 +587,11 @@ def generate_single_blog(
             template_used=template_type,
             generation_time=result["generation_time"],
             tokens_used=result["tokens_used"],
-            status="draft"
+            status="draft",
+            # Image information
+            featured_image_url=image_result.get("image_url") if image_result.get("success") else None,
+            image_prompt_used=image_result.get("prompt_used") if image_result.get("success") else None,
+            image_generated=image_result.get("success", False)
         )
         
         db.add(blog)
@@ -341,8 +606,20 @@ def generate_single_blog(
                 "blog_handle": store.blog_handle
             })
             
-            handle = keyword.keyword.lower().replace(" ", "-").replace("'", "")
-            publish_result = publisher.publish_blog(blog.title, blog.content_html, handle)
+            # Generate SEO-friendly handle from keyword
+            import re
+            handle = keyword.keyword.lower().replace(" ", "-").replace("'", "").replace('"', '')
+            handle = re.sub(r'[^a-z0-9\-]', '', handle)
+            # Collapse multiple consecutive hyphens into a single hyphen
+            handle = re.sub(r'-+', '-', handle)
+            # Remove leading/trailing hyphens
+            handle = handle.strip('-')
+            handle = handle[:40]  # Shopify handle limit
+            # Strip hyphens again after length limit (in case we cut off in the middle)
+            handle = handle.rstrip('-')
+            # Get image URL from the generated image result
+            image_url = image_result.get("image_url") if image_result.get("success") else None
+            publish_result = publisher.publish_blog(blog.title, blog.content_html, handle, keyword.keyword, image_data, image_url)
             
             if publish_result["success"]:
                 blog.published = True
@@ -364,12 +641,21 @@ def generate_single_blog(
         
     except Exception as e:
         # Update keyword status to failed
-        keyword = db.query(Keyword).filter(Keyword.id == keyword_id).first()
-        if keyword:
-            keyword.status = "failed"
-            db.commit()
+        try:
+            keyword = db.query(Keyword).filter(Keyword.id == keyword_id).first()
+            if keyword:
+                keyword.status = "failed"
+                db.commit()
+        except Exception as db_error:
+            print(f"Database error while updating failed status: {str(db_error)}")
         
         print(f"Blog generation failed for keyword {keyword_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        # Always close the database session
+        db.close()
 
 # Routes
 @router.post("/generate", response_model=BatchGenerateResponse)
@@ -436,8 +722,7 @@ async def generate_blogs(
             request.template_type,
             request.auto_publish,
             current_user.tenant_id,
-            current_user.openai_api_key,
-            db
+            current_user.openai_api_key
         )
     
     # Update tenant usage
@@ -488,7 +773,9 @@ async def get_blogs(
             live_url=blog.live_url,
             published=blog.published,
             created_at=blog.created_at,
-            published_at=blog.published_at
+            published_at=blog.published_at,
+            featured_image_url=blog.featured_image_url,
+            image_generated=blog.image_generated
         ))
     
     return results
@@ -520,7 +807,9 @@ async def get_blog_content(
         content_html=blog.content_html,
         meta_description=blog.meta_description,
         word_count=blog.word_count,
-        live_url=blog.live_url
+        live_url=blog.live_url,
+        featured_image_url=blog.featured_image_url,
+        image_generated=blog.image_generated or False
     )
 
 @router.post("/{blog_id}/publish")
@@ -577,11 +866,43 @@ async def publish_blog(
         # Remove special characters and limit length
         import re
         keyword_handle = re.sub(r'[^a-z0-9\-]', '', keyword_handle)
+        # Collapse multiple consecutive hyphens into a single hyphen
+        keyword_handle = re.sub(r'-+', '-', keyword_handle)
+        # Remove leading/trailing hyphens
+        keyword_handle = keyword_handle.strip('-')
         keyword_handle = keyword_handle[:40]  # Shopify handle limit
+        # Strip hyphens again after length limit (in case we cut off in the middle)
+        keyword_handle = keyword_handle.rstrip('-')
         handle = f"{keyword_handle}-guide"
     else:
         handle = f"blog-{blog.id}-{int(time.time())}"
-    result = publisher.publish_blog(blog.title, blog.content_html, handle)
+    
+    # Generate featured image for manual publish
+    image_data = None
+    if keyword:
+        try:
+            # Get current user for OpenAI key
+            current_user = await get_demo_current_user(db)
+            if current_user.openai_api_key:
+                from app.routers.blogs import BlogGenerator
+                generator = BlogGenerator(current_user.openai_api_key)
+                image_result = generator.generate_featured_image(keyword.keyword, {})
+                image_data = image_result.get("image_data") if image_result.get("success") else None
+        except Exception as e:
+            print(f"Image generation failed: {e}")
+    
+    # Try publishing with original handle first
+    keyword_text = keyword.keyword if keyword else None
+    # Use existing image URL from database if available
+    blog_image_url = blog.featured_image_url
+    print(f"DEBUG: Publishing with image URL: {blog_image_url}")
+    result = publisher.publish_blog(blog.title, blog.content_html, handle, keyword_text, image_data, blog_image_url)
+    
+    # If handle already exists, add unique suffix
+    if not result["success"] and "handle" in result.get("error", "") and "already been taken" in result.get("error", ""):
+        unique_suffix = int(time.time()) % 10000  # Last 4 digits of timestamp
+        handle = f"{keyword_handle[:35]}-{unique_suffix}-guide"  # Leave room for suffix
+        result = publisher.publish_blog(blog.title, blog.content_html, handle, keyword_text, image_data, blog_image_url)
     
     if result["success"]:
         blog.published = True

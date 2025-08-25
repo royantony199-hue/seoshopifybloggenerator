@@ -40,7 +40,6 @@ import {
   Article, 
   PlayArrow,
   Refresh,
-  SelectAll,
   CheckBox,
   CheckBoxOutlineBlank,
   Replay,
@@ -52,6 +51,7 @@ import { keywordsApi, blogsApi, storesApi } from '../../services/api';
 import LoadingSpinner from '../../components/Loading/LoadingSpinner';
 import TableSkeleton from '../../components/Loading/TableSkeleton';
 import ErrorDialog from '../../components/Error/ErrorDialog';
+import ErrorBoundary from '../../components/Error/ErrorBoundary';
 import { parseApiError, AppError } from '../../utils/errorHandling';
 
 interface Keyword {
@@ -135,9 +135,23 @@ const KeywordsPage: React.FC = () => {
 
   // Load data on component mount
   useEffect(() => {
-    loadKeywords();
-    loadStores();
-    loadKeywordStats();
+    let isMounted = true;
+    
+    const loadData = async () => {
+      if (isMounted) {
+        await Promise.all([
+          loadKeywords(),
+          loadStores(), 
+          loadKeywordStats()
+        ]);
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const loadKeywords = async () => {
@@ -180,7 +194,7 @@ const KeywordsPage: React.FC = () => {
       
       setKeywords(sortedKeywords);
     } catch (error) {
-      console.error('Failed to load keywords:', error);
+      showError(error);
     } finally {
       setLoadingKeywords(false);
     }
@@ -194,7 +208,7 @@ const KeywordsPage: React.FC = () => {
         setSelectedStore(data[0].id);
       }
     } catch (error) {
-      console.error('Failed to load stores:', error);
+      showError(error);
     }
   };
 
@@ -203,7 +217,7 @@ const KeywordsPage: React.FC = () => {
       const stats = await keywordsApi.getStats();
       setKeywordStats(stats);
     } catch (error) {
-      console.error('Failed to load keyword stats:', error);
+      showError(error);
     }
   };
 
@@ -253,9 +267,6 @@ const KeywordsPage: React.FC = () => {
   });
 
   const handleUploadToBackend = async () => {
-    console.log('Upload process started');
-    console.log('Uploaded keywords:', uploadedKeywords);
-    
     if (uploadedKeywords.length === 0) {
       setUploadMessage('No keywords to upload');
       setUploadStatus('error');
@@ -266,18 +277,9 @@ const KeywordsPage: React.FC = () => {
     setUploadMessage('Uploading keywords to server...');
 
     try {
-      console.log('Creating CSV content...');
       const csvContent = Papa.unparse(uploadedKeywords);
-      console.log('CSV content:', csvContent);
-      
       const blob = new Blob([csvContent], { type: 'text/csv' });
       const file = new File([blob], 'keywords.csv', { type: 'text/csv' });
-      console.log('File created:', file);
-
-      console.log('Calling API with params:', {
-        campaignName: campaignName || 'Uploaded Keywords',
-        templateType
-      });
 
       const result = await keywordsApi.uploadKeywords(
         file,
@@ -286,7 +288,6 @@ const KeywordsPage: React.FC = () => {
         templateType
       );
 
-      console.log('Upload result:', result);
       setUploadStatus('success');
       setUploadMessage(`Successfully uploaded ${result.keywords_added} keywords!`);
       setUploadedKeywords([]);
@@ -295,11 +296,9 @@ const KeywordsPage: React.FC = () => {
       loadKeywords();
       loadKeywordStats();
     } catch (error: any) {
-      console.error('Upload error details:', error);
-      console.error('Error stack:', error.stack);
       setUploadStatus('error');
       setUploadMessage(`Failed to upload keywords: ${error.message || 'Unknown error'}`);
-      showError(error, handleUpload);
+      showError(error);
     }
   };
 
@@ -483,32 +482,62 @@ const KeywordsPage: React.FC = () => {
     }
     
     try {
-      const response = await fetch(`http://localhost:8000/api/keywords/${keywordId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-          'Content-Type': 'application/json',
-        }
-      });
+      await keywordsApi.deleteKeyword(keywordId);
       
-      if (response.ok) {
-        alert(`✅ Keyword "${keywordText}" deleted successfully`);
-        // Refresh data
-        loadKeywords();
-        loadKeywordStats();
-      } else {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to delete keyword');
-      }
+      // Remove from selected keywords if it was selected
+      setSelectedKeywords(prev => prev.filter(id => id !== keywordId));
       
+      alert(`✅ Keyword "${keywordText}" deleted successfully`);
+      // Refresh data
+      loadKeywords();
+      loadKeywordStats();
     } catch (error: any) {
       console.error('Failed to delete keyword:', error);
       alert(`❌ Failed to delete keyword: ${error.message}`);
     }
   };
 
+  // Bulk delete keywords
+  const handleBulkDelete = async () => {
+    if (selectedKeywords.length === 0) {
+      alert('Please select keywords to delete');
+      return;
+    }
+
+    const selectedKeywordNames = keywords
+      .filter(k => selectedKeywords.includes(k.id!))
+      .map(k => k.keyword)
+      .slice(0, 5)
+      .join(', ');
+    
+    const confirmMessage = selectedKeywords.length > 5 
+      ? `Are you sure you want to delete ${selectedKeywords.length} keywords? (${selectedKeywordNames}, and ${selectedKeywords.length - 5} more...)`
+      : `Are you sure you want to delete ${selectedKeywords.length} keywords? (${selectedKeywordNames})`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const result = await keywordsApi.bulkDeleteKeywords(selectedKeywords);
+      
+      // Clear selection
+      setSelectedKeywords([]);
+      
+      // Reload keywords list
+      await loadKeywords();
+      await loadKeywordStats();
+      
+      alert(`✅ ${result.deleted_count} keywords deleted successfully`);
+    } catch (error: any) {
+      console.error('Failed to delete keywords:', error);
+      alert(`❌ Failed to delete keywords: ${error.message}`);
+    }
+  };
+
   return (
-    <Container maxWidth="xl" sx={{ mt: 4 }}>
+    <ErrorBoundary>
+      <Container maxWidth="xl" sx={{ mt: 4 }}>
       <Typography variant="h4" gutterBottom fontWeight="bold">
         Keywords Management
       </Typography>
@@ -590,12 +619,29 @@ const KeywordsPage: React.FC = () => {
                 
                 <Button
                   variant="outlined"
-                  startIcon={selectedKeywords.length === eligibleKeywords.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
-                  onClick={handleSelectAll}
-                  disabled={eligibleKeywords.length === 0}
+                  startIcon={selectedKeywords.length === keywords.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
+                  onClick={() => {
+                    if (selectedKeywords.length === keywords.length) {
+                      setSelectedKeywords([]);
+                    } else {
+                      setSelectedKeywords(keywords.map(k => k.id!));
+                    }
+                  }}
+                  disabled={keywords.length === 0}
                 >
-                  {selectedKeywords.length === eligibleKeywords.length ? 'Deselect All' : 'Select All Eligible'}
+                  {selectedKeywords.length === keywords.length ? 'Deselect All' : 'Select All'}
                 </Button>
+
+                {selectedKeywords.length > 0 && (
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    startIcon={<Delete />}
+                    onClick={handleBulkDelete}
+                  >
+                    Delete {selectedKeywords.length} Selected
+                  </Button>
+                )}
 
                 {failedKeywords.length > 0 && (
                   <Button
@@ -610,7 +656,7 @@ const KeywordsPage: React.FC = () => {
                 )}
                 
                 <Typography variant="body2" color="textSecondary">
-                  {selectedEligibleCount} of {eligibleKeywords.length} eligible keywords selected
+                  {selectedKeywords.length} keywords selected ({selectedEligibleCount} eligible for blog generation)
                 </Typography>
               </Box>
 
@@ -649,10 +695,16 @@ const KeywordsPage: React.FC = () => {
                     <TableRow>
                       <TableCell padding="checkbox">
                         <Checkbox
-                          checked={selectedKeywords.length === eligibleKeywords.length && eligibleKeywords.length > 0}
-                          indeterminate={selectedKeywords.length > 0 && selectedKeywords.length < eligibleKeywords.length}
-                          onChange={handleSelectAll}
-                          disabled={eligibleKeywords.length === 0}
+                          checked={selectedKeywords.length === keywords.length && keywords.length > 0}
+                          indeterminate={selectedKeywords.length > 0 && selectedKeywords.length < keywords.length}
+                          onChange={() => {
+                            if (selectedKeywords.length === keywords.length) {
+                              setSelectedKeywords([]);
+                            } else {
+                              setSelectedKeywords(keywords.map(k => k.id!));
+                            }
+                          }}
+                          disabled={keywords.length === 0}
                         />
                       </TableCell>
                       <TableCell>Keyword</TableCell>
@@ -674,7 +726,6 @@ const KeywordsPage: React.FC = () => {
                             <Checkbox
                               checked={selectedKeywords.includes(keyword.id!)}
                               onChange={() => handleSelectKeyword(keyword.id!)}
-                              disabled={!isEligible}
                             />
                           </TableCell>
                           <TableCell>
@@ -1103,7 +1154,8 @@ organic CBD products, 8500, Wellness, 42`}
           // Retry action would be handled by the stored retry function
         }}
       />
-    </Container>
+      </Container>
+    </ErrorBoundary>
   );
 };
 

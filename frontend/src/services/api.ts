@@ -1,7 +1,9 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { secureStorage } from '../utils/secureStorage';
+
+const API_BASE = (import.meta as any).env.VITE_API_URL || 'http://localhost:8000';
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('auth_token');
+  const token = secureStorage.getAuthToken();
   return {
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json',
@@ -51,7 +53,7 @@ export const keywordsApi = {
     if (campaignName) formData.append('campaign_name', campaignName);
     if (templateType) formData.append('template_type', templateType);
     
-    const token = localStorage.getItem('auth_token');
+    const token = secureStorage.getAuthToken();
     const response = await fetch(`${API_BASE}/api/keywords/upload`, {
       method: 'POST',
       headers: {
@@ -76,6 +78,31 @@ export const keywordsApi = {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to reset keyword');
+    }
+    return response.json();
+  },
+
+  deleteKeyword: async (keywordId: number) => {
+    const response = await fetch(`${API_BASE}/api/keywords/${keywordId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete keyword');
+    }
+    return response.json();
+  },
+
+  bulkDeleteKeywords: async (keywordIds: number[]) => {
+    const response = await fetch(`${API_BASE}/api/keywords/bulk-delete`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(keywordIds),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete keywords');
     }
     return response.json();
   },
@@ -197,6 +224,84 @@ export const storesApi = {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to delete store');
     }
+    return response.json();
+  },
+};
+
+export const productsApi = {
+  getProducts: async (storeId?: number, activeOnly: boolean = true) => {
+    const params = new URLSearchParams();
+    if (storeId) params.append('store_id', storeId.toString());
+    params.append('active_only', activeOnly.toString());
+    
+    const response = await fetch(`${API_BASE}/api/products?${params}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch products');
+    return response.json();
+  },
+
+  createProduct: async (data: {
+    name: string;
+    description?: string;
+    url: string;
+    price?: string;
+    keywords?: string;
+    integration_text?: string;
+    store_id: number;
+    priority?: number;
+  }) => {
+    const response = await fetch(`${API_BASE}/api/products`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create product');
+    }
+    return response.json();
+  },
+
+  updateProduct: async (productId: number, data: {
+    name?: string;
+    description?: string;
+    url?: string;
+    price?: string;
+    keywords?: string;
+    integration_text?: string;
+    is_active?: boolean;
+    priority?: number;
+  }) => {
+    const response = await fetch(`${API_BASE}/api/products/${productId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to update product');
+    }
+    return response.json();
+  },
+
+  deleteProduct: async (productId: number) => {
+    const response = await fetch(`${API_BASE}/api/products/${productId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete product');
+    }
+    return response.json();
+  },
+
+  getProductsByKeyword: async (keyword: string, storeId: number) => {
+    const response = await fetch(`${API_BASE}/api/products/by-keywords/${encodeURIComponent(keyword)}?store_id=${storeId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch products by keyword');
     return response.json();
   },
 };

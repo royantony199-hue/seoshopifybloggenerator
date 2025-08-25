@@ -4,8 +4,10 @@ Configuration management for SEO Blog Automation SaaS
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import Field, model_validator
 from typing import List, Optional
 import os
+import secrets
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -23,9 +25,26 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # Security
-    SECRET_KEY: str = "your-super-secret-key-change-in-production"
+    SECRET_KEY: str = Field(
+        min_length=32,
+        description="JWT secret key - MUST be at least 32 characters"
+    )
+    
+    # Encryption key for sensitive data (API keys, etc.)
+    ENCRYPTION_KEY: Optional[str] = None
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    @model_validator(mode='after')
+    def validate_security_settings(self):
+        """Validate security settings"""
+        if self.ENVIRONMENT == "production" and self.SECRET_KEY == "dev-secret-key-only":
+            raise ValueError("SECRET_KEY must be set to a secure value in production!")
+        
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters long!")
+        
+        return self
     
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://yourdomain.com"

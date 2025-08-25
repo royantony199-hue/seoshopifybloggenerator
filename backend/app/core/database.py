@@ -101,6 +101,36 @@ class ShopifyStore(Base):
     tenant = relationship("Tenant", back_populates="stores")
     user = relationship("User", back_populates="stores")
     blogs = relationship("GeneratedBlog", back_populates="store")
+    products = relationship("Product", back_populates="store")
+
+class Product(Base):
+    """Product catalog for blog integration"""
+    __tablename__ = "products"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    store_id = Column(Integer, ForeignKey("shopify_stores.id"), nullable=False)
+    
+    # Product details
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    url = Column(String, nullable=False)  # Product URL
+    price = Column(String, nullable=True)  # e.g., "$29.99"
+    
+    # SEO and marketing
+    keywords = Column(Text, nullable=True)  # Comma-separated keywords this product relates to
+    integration_text = Column(Text, nullable=True)  # Custom text for blog integration
+    
+    # Status
+    is_active = Column(Boolean, default=True)
+    priority = Column(Integer, default=0)  # Higher priority products shown first
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    tenant = relationship("Tenant")
+    store = relationship("ShopifyStore", back_populates="products")
 
 class KeywordCampaign(Base):
     """Keyword campaign for organizing keyword sets"""
@@ -167,6 +197,11 @@ class GeneratedBlog(Base):
     shopify_handle = Column(String, nullable=True)
     live_url = Column(String, nullable=True)
     published = Column(Boolean, default=False)
+    
+    # Featured image
+    featured_image_url = Column(String, nullable=True)
+    image_prompt_used = Column(Text, nullable=True)
+    image_generated = Column(Boolean, default=False)
     
     # Generation metadata
     template_used = Column(String, nullable=True)
@@ -239,3 +274,6 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Export all models for easy importing
+__all__ = ["User", "Tenant", "ShopifyStore", "Product", "KeywordCampaign", "Keyword", "GeneratedBlog", "BillingRecord"]

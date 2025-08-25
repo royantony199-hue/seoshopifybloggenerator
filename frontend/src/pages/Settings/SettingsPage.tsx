@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { settingsApi, storesApi } from '../../services/api';
+import { settingsApi, storesApi, productsApi } from '../../services/api';
 import {
   Container,
   Typography,
@@ -27,6 +27,12 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Save,
@@ -39,6 +45,8 @@ import {
   Analytics,
   Delete,
   Add,
+  Inventory,
+  Edit,
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -123,6 +131,11 @@ const SettingsPage: React.FC = () => {
           is_active: true,
         }
       ]);
+      
+      // Set first store as selected for products
+      if (stores.length > 0 && !selectedStoreId) {
+        setSelectedStoreId(stores[0].id);
+      }
     } catch (error) {
       console.error('Failed to load stores:', error);
       // Initialize with empty store if loading fails
@@ -141,10 +154,32 @@ const SettingsPage: React.FC = () => {
 
   const [shopifyStores, setShopifyStores] = useState([]);
 
+  // Products State
+  const [products, setProducts] = useState([]);
+  const [selectedStoreId, setSelectedStoreId] = useState(0);
+  const [productDialogOpen, setProductDialogOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [productFormData, setProductFormData] = useState({
+    name: '',
+    description: '',
+    url: '',
+    price: '',
+    keywords: '',
+    integration_text: '',
+    priority: 0,
+    is_active: true
+  });
+
   useEffect(() => {
     loadApiKeys();
     loadShopifyStores();
   }, []);
+
+  useEffect(() => {
+    if (selectedStoreId) {
+      loadProducts();
+    }
+  }, [selectedStoreId]);
 
   // Published Links State
   const [publishedLinks] = useState([
@@ -295,6 +330,103 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  // Products Management Functions
+  const loadProducts = async () => {
+    if (!selectedStoreId) return;
+    
+    try {
+      const data = await productsApi.getProducts(selectedStoreId, false);
+      setProducts(data);
+    } catch (error) {
+      console.error('Failed to load products:', error);
+    }
+  };
+
+  const handleOpenProductDialog = (product = null) => {
+    if (product) {
+      setEditingProduct(product);
+      setProductFormData({
+        name: product.name,
+        description: product.description || '',
+        url: product.url,
+        price: product.price || '',
+        keywords: product.keywords || '',
+        integration_text: product.integration_text || '',
+        priority: product.priority,
+        is_active: product.is_active
+      });
+    } else {
+      setEditingProduct(null);
+      setProductFormData({
+        name: '',
+        description: '',
+        url: '',
+        price: '',
+        keywords: '',
+        integration_text: '',
+        priority: 0,
+        is_active: true
+      });
+    }
+    setProductDialogOpen(true);
+  };
+
+  const handleCloseProductDialog = () => {
+    setProductDialogOpen(false);
+    setEditingProduct(null);
+  };
+
+  const handleSaveProduct = async () => {
+    try {
+      const productData = { ...productFormData, store_id: selectedStoreId };
+      
+      if (editingProduct) {
+        await productsApi.updateProduct(editingProduct.id, productData);
+        alert('✅ Product updated successfully');
+      } else {
+        await productsApi.createProduct(productData);
+        alert('✅ Product created successfully');
+      }
+      
+      handleCloseProductDialog();
+      loadProducts();
+    } catch (error) {
+      alert(`❌ ${error.message}`);
+    }
+  };
+
+  const handleDeleteProduct = async (productId, productName) => {
+    if (!window.confirm(`Are you sure you want to delete "${productName}"?`)) {
+      return;
+    }
+
+    try {
+      await productsApi.deleteProduct(productId);
+      alert('✅ Product deleted successfully');
+      loadProducts();
+    } catch (error) {
+      alert(`❌ ${error.message}`);
+    }
+  };
+
+  const handleProductFormSubmit = async () => {
+    try {
+      const formDataWithStore = { ...productFormData, store_id: selectedStoreId };
+      
+      if (editingProduct) {
+        await productsApi.updateProduct(editingProduct.id, formDataWithStore);
+      } else {
+        await productsApi.createProduct(formDataWithStore);
+      }
+      
+      handleCloseProductDialog();
+      loadProducts();
+      alert(editingProduct ? '✅ Product updated successfully' : '✅ Product created successfully');
+    } catch (error) {
+      alert(`❌ ${error.message}`);
+    }
+  };
+
   if (loading) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
@@ -318,6 +450,7 @@ const SettingsPage: React.FC = () => {
         <Tabs value={tabValue} onChange={handleTabChange}>
           <Tab icon={<Key />} label="API Keys" />
           <Tab icon={<Store />} label="Shopify Stores" />
+          <Tab icon={<Inventory />} label="Products" />
           <Tab icon={<Article />} label="Published Blogs" />
           <Tab icon={<Analytics />} label="Analytics" />
         </Tabs>
@@ -645,8 +778,248 @@ const SettingsPage: React.FC = () => {
         </Box>
       </TabPanel>
 
+
       {/* Published Blogs Tab */}
+      <TabPanel value={tabValue} index={3}>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Published Blog Links
+          </Typography>
+          <Typography variant="body2" color="textSecondary" paragraph>
+            Track all your published blogs and their performance
+          </Typography>
+
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Title</TableCell>
+                  <TableCell>Keyword</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell align="right">Words</TableCell>
+                  <TableCell align="right">Views</TableCell>
+                  <TableCell>Published</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {publishedLinks.map((blog) => (
+                  <TableRow key={blog.id}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="medium">
+                        {blog.title.length > 50 ? `${blog.title.substring(0, 50)}...` : blog.title}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={blog.keyword} 
+                        size="small" 
+                        variant="outlined"
+                        color="primary"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={blog.status}
+                        color="success"
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      {blog.word_count.toLocaleString()}
+                    </TableCell>
+                    <TableCell align="right">
+                      {blog.views.toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="textSecondary">
+                        {new Date(blog.published_at).toLocaleDateString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        onClick={() => window.open(blog.live_url, '_blank')}
+                        color="primary"
+                      >
+                        <OpenInNew />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+            <Typography variant="h6" gutterBottom>
+              Quick Copy Links
+            </Typography>
+            {publishedLinks.map((blog) => (
+              <Box key={blog.id} sx={{ mb: 1 }}>
+                <Typography variant="body2" color="primary" component="div">
+                  <strong>{blog.keyword}:</strong>{' '}
+                  <Link href={blog.live_url} target="_blank" rel="noopener">
+                    {blog.live_url}
+                  </Link>
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </TabPanel>
+
+      {/* Products Tab */}
       <TabPanel value={tabValue} index={2}>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Product Management
+          </Typography>
+          <Typography variant="body2" color="textSecondary" paragraph>
+            Manage products that will be automatically integrated into your blog posts based on keyword matching.
+          </Typography>
+
+          {/* Store Selection */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Store />
+                <Typography variant="h6">Select Store</Typography>
+              </Box>
+              
+              <FormControl fullWidth>
+                <InputLabel>Store</InputLabel>
+                <Select
+                  value={selectedStoreId}
+                  label="Store"
+                  onChange={(e) => setSelectedStoreId(Number(e.target.value))}
+                >
+                  {shopifyStores.map((store) => (
+                    <MenuItem key={store.id} value={store.id}>
+                      {store.store_name} ({store.shop_url})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h6">
+                  Products ({products.length})
+                </Typography>
+                
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={() => handleOpenProductDialog()}
+                  disabled={!selectedStoreId}
+                >
+                  Add Product
+                </Button>
+              </Box>
+
+              {products.length === 0 ? (
+                <Box textAlign="center" py={4}>
+                  <Typography variant="body1" color="textSecondary">
+                    No products found. Add your first product to start integrating them into blog posts.
+                  </Typography>
+                </Box>
+              ) : (
+                <TableContainer component={Paper}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Product</TableCell>
+                        <TableCell>URL</TableCell>
+                        <TableCell>Price</TableCell>
+                        <TableCell>Keywords</TableCell>
+                        <TableCell>Priority</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell align="center">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {products.map((product) => (
+                        <TableRow key={product.id}>
+                          <TableCell>
+                            <Box>
+                              <Typography variant="body2" fontWeight="medium">
+                                {product.name}
+                              </Typography>
+                              {product.description && (
+                                <Typography variant="body2" color="textSecondary" noWrap>
+                                  {product.description}
+                                </Typography>
+                              )}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ maxWidth: 200 }} noWrap>
+                              {product.url}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {product.price && (
+                              <Chip label={product.price} size="small" color="primary" />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" sx={{ maxWidth: 150 }} noWrap>
+                              {product.keywords || '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={product.priority} 
+                              size="small" 
+                              color={product.priority > 0 ? 'success' : 'default'}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={product.is_active ? 'Active' : 'Inactive'}
+                              size="small"
+                              color={product.is_active ? 'success' : 'default'}
+                              variant={product.is_active ? 'filled' : 'outlined'}
+                            />
+                          </TableCell>
+                          <TableCell align="center">
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<Edit />}
+                                onClick={() => handleOpenProductDialog(product)}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="error"
+                                startIcon={<Delete />}
+                                onClick={() => handleDeleteProduct(product.id, product.name)}
+                              >
+                                Delete
+                              </Button>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </CardContent>
+          </Card>
+        </Box>
+      </TabPanel>
+
+      {/* Published Blogs Tab */}
+      <TabPanel value={tabValue} index={3}>
         <Box sx={{ mb: 3 }}>
           <Typography variant="h6" gutterBottom>
             Published Blog Links
@@ -736,7 +1109,7 @@ const SettingsPage: React.FC = () => {
       </TabPanel>
 
       {/* Analytics Tab */}
-      <TabPanel value={tabValue} index={3}>
+      <TabPanel value={tabValue} index={4}>
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
             <Card>
@@ -795,6 +1168,117 @@ const SettingsPage: React.FC = () => {
           </Grid>
         </Grid>
       </TabPanel>
+
+      {/* Product Dialog */}
+      <Dialog open={productDialogOpen} onClose={handleCloseProductDialog} maxWidth="md" fullWidth>
+        <DialogTitle>
+          {editingProduct ? 'Edit Product' : 'Add New Product'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <TextField
+                  label="Product Name"
+                  fullWidth
+                  value={productFormData.name}
+                  onChange={(e) => setProductFormData({ ...productFormData, name: e.target.value })}
+                  required
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  label="Description"
+                  fullWidth
+                  multiline
+                  rows={2}
+                  value={productFormData.description}
+                  onChange={(e) => setProductFormData({ ...productFormData, description: e.target.value })}
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={8}>
+                <TextField
+                  label="Product URL"
+                  fullWidth
+                  value={productFormData.url}
+                  onChange={(e) => setProductFormData({ ...productFormData, url: e.target.value })}
+                  required
+                  placeholder="https://your-store.com/products/product-name"
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  label="Price"
+                  fullWidth
+                  value={productFormData.price}
+                  onChange={(e) => setProductFormData({ ...productFormData, price: e.target.value })}
+                  placeholder="$29.99"
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  label="Related Keywords"
+                  fullWidth
+                  value={productFormData.keywords}
+                  onChange={(e) => setProductFormData({ ...productFormData, keywords: e.target.value })}
+                  placeholder="cbd oil, pain relief, fibromyalgia, sleep"
+                  helperText="Comma-separated keywords that this product relates to. Used to automatically select products for blog posts."
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  label="Integration Text"
+                  fullWidth
+                  multiline
+                  rows={3}
+                  value={productFormData.integration_text}
+                  onChange={(e) => setProductFormData({ ...productFormData, integration_text: e.target.value })}
+                  placeholder="For premium quality CBD products, check out our..."
+                  helperText="Custom text that will be used when integrating this product into blog posts"
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Priority"
+                  type="number"
+                  fullWidth
+                  value={productFormData.priority}
+                  onChange={(e) => setProductFormData({ ...productFormData, priority: Number(e.target.value) })}
+                  helperText="Higher priority products are preferred for blog integration"
+                />
+              </Grid>
+              
+              <Grid item xs={12} sm={6}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={productFormData.is_active}
+                      onChange={(e) => setProductFormData({ ...productFormData, is_active: e.target.checked })}
+                    />
+                  }
+                  label="Active"
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseProductDialog}>Cancel</Button>
+          <Button 
+            onClick={handleProductFormSubmit} 
+            variant="contained"
+            disabled={!productFormData.name || !productFormData.url}
+          >
+            {editingProduct ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import { secureStorage } from '../utils/secureStorage';
 
 interface User {
   id: number;
@@ -86,18 +87,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Check for existing token on app start
   useEffect(() => {
     const checkAuthToken = async () => {
-      const token = localStorage.getItem('auth_token');
-      const userStr = localStorage.getItem('auth_user');
+      const token = secureStorage.getAuthToken();
+      const user = secureStorage.getUserData();
       
-      if (token && userStr) {
+      if (token && user) {
         try {
-          const user = JSON.parse(userStr);
           // Validate token with backend
-          const response = await fetch('/api/auth/me', {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const response = await fetch(`${apiUrl}/api/auth/me`, {
             headers: {
               'Authorization': `Bearer ${token}`,
             },
+            signal: controller.signal,
           });
+          
+          clearTimeout(timeoutId);
           
           if (response.ok) {
             const userData = await response.json();
@@ -106,15 +113,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               payload: { user: userData, token } 
             });
           } else {
-            // Token is invalid, clear localStorage
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('auth_user');
+            // Token is invalid, clear secure storage
+            secureStorage.clearAuthData();
             dispatch({ type: 'SET_LOADING', payload: false });
           }
         } catch (error) {
-          // Invalid token or user data, clear storage
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_user');
+          // Handle timeout/network errors or invalid token
+          secureStorage.clearAuthData();
           dispatch({ type: 'SET_LOADING', payload: false });
         }
       } else {
@@ -146,8 +151,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const data = await response.json();
       
-      localStorage.setItem('auth_token', data.access_token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      // Use secure storage for sensitive data
+      secureStorage.setAuthToken(data.access_token);
+      secureStorage.setUserData(data.user);
       
       dispatch({
         type: 'LOGIN_SUCCESS',
@@ -182,8 +188,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const data = await response.json();
       
-      localStorage.setItem('auth_token', data.access_token);
-      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      // Use secure storage for sensitive data
+      secureStorage.setAuthToken(data.access_token);
+      secureStorage.setUserData(data.user);
       
       dispatch({
         type: 'LOGIN_SUCCESS',
@@ -199,8 +206,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
+    secureStorage.clearAuthData();
     dispatch({ type: 'LOGOUT' });
   };
 

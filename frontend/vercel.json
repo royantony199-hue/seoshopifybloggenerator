@@ -1,6 +1,6 @@
 {
-  "name": "SEO Dashboard Frontend",
   "version": 2,
+  "name": "seo-blog-automation-frontend",
   "builds": [
     {
       "src": "package.json",
@@ -12,8 +12,40 @@
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "https://your-backend-domain.com/api/$1"
+    },
+    {
       "src": "/(.*)",
       "dest": "/index.html"
+    }
+  ],
+  "env": {
+    "VITE_API_URL": "@api_url",
+    "VITE_APP_NAME": "@app_name",
+    "VITE_ENVIRONMENT": "@environment"
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains"
+        }
+      ]
     }
   ]
 }

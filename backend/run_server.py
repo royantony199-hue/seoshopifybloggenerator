@@ -8,9 +8,9 @@ if __name__ == "__main__":
     print("API documentation at http://127.0.0.1:8000/docs")
     
     uvicorn.run(
-        app, 
+        "app.main:app", 
         host="127.0.0.1", 
-        port=8001,
-        reload=False,
+        port=8090,
+        reload=True,
         log_level="info"
     )

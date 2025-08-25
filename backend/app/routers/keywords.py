@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 import pandas as pd
 import io
+# import magic  # Temporarily disabled - requires libmagic system library
+import logging
 from datetime import datetime
 
 from app.core.database import get_db, Keyword, KeywordCampaign, Tenant, GeneratedBlog
@@ -17,6 +19,82 @@ from app.routers.demo_auth import get_demo_current_user
 from app.core.config import settings, BLOG_TEMPLATES
 
 router = APIRouter()
+
+# Configuration
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+ALLOWED_MIME_TYPES = {
+    'text/csv': ['.csv'],
+    'application/vnd.ms-excel': ['.xls'],
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+    'text/plain': ['.csv']  # Some systems report CSV as text/plain
+}
+
+logger = logging.getLogger(__name__)
+
+async def validate_upload_file(file: UploadFile) -> None:
+    """Comprehensive file validation for security and format checking"""
+    
+    # Check if file is provided
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file provided"
+        )
+    
+    # Check filename
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No filename provided"
+        )
+    
+    # Check file extension
+    allowed_extensions = ['.csv', '.xlsx', '.xls']
+    file_extension = '.' + file.filename.split('.')[-1].lower()
+    if file_extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File must be one of: {', '.join(allowed_extensions)}"
+        )
+    
+    # Check file size
+    if hasattr(file, 'size') and file.size:
+        if file.size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024*1024)}MB"
+            )
+    
+    # Read a small portion to check content
+    try:
+        content_sample = await file.read(1024)  # Read first 1KB
+        await file.seek(0)  # Reset file pointer
+        
+        # Basic content validation - check for suspicious patterns
+        suspicious_patterns = [b'<script', b'javascript:', b'<iframe', b'<?php']
+        for pattern in suspicious_patterns:
+            if pattern in content_sample.lower():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File contains suspicious content"
+                )
+        
+        # Check if it's a valid text file (for CSV) or binary file (for Excel)
+        if file_extension == '.csv':
+            try:
+                content_sample.decode('utf-8')
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="CSV file must be valid UTF-8 text"
+                )
+        
+    except Exception as e:
+        logger.error(f"File validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file format or corrupted file"
+        )
 
 # Pydantic models
 class KeywordCreate(BaseModel):
@@ -152,12 +230,8 @@ async def upload_keywords(
     # Get demo user for testing
     current_user = await get_demo_current_user(db)
     
-    # Check file type
-    if not file.filename.endswith(('.csv', '.xlsx', '.xls')):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be CSV or Excel format"
-        )
+    # File validation
+    await validate_upload_file(file)
     
     # Check tenant limits
     tenant = db.query(Tenant).filter(Tenant.id == current_user.tenant_id).first()
@@ -172,14 +246,56 @@ async def upload_keywords(
         )
     
     try:
-        # Read file content
+        # Read file content with size limit
         contents = await file.read()
         
-        # Parse file based on type
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
-        else:
-            df = pd.read_excel(io.BytesIO(contents))
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024*1024)}MB"
+            )
+        
+        # Parse file based on type with error handling
+        try:
+            if file.filename.endswith('.csv'):
+                # Limit number of rows to prevent memory issues
+                df = pd.read_csv(
+                    io.StringIO(contents.decode('utf-8')), 
+                    nrows=settings.MAX_KEYWORDS_PER_UPLOAD
+                )
+            else:
+                df = pd.read_excel(
+                    io.BytesIO(contents),
+                    nrows=settings.MAX_KEYWORDS_PER_UPLOAD
+                )
+        except pd.errors.EmptyDataError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File is empty or contains no valid data"
+            )
+        except pd.errors.ParserError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Error parsing file: {str(e)}"
+            )
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File encoding is not supported. Please use UTF-8 encoding."
+            )
+        
+        # Validate DataFrame
+        if df.empty:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File contains no data rows"
+            )
+        
+        if len(df) > settings.MAX_KEYWORDS_PER_UPLOAD:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File contains too many rows. Maximum {settings.MAX_KEYWORDS_PER_UPLOAD} keywords allowed."
+            )
         
         # Validate required columns
         required_columns = ['keyword']
@@ -323,12 +439,39 @@ async def get_keywords(
 ):
     """Get keywords for current tenant"""
     
+    # Input validation
+    if offset < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Offset must be non-negative"
+        )
+    
+    if limit < 1 or limit > 1000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be between 1 and 1000"
+        )
+    
+    # Validate status parameter against allowed values
+    allowed_statuses = {"pending", "processing", "completed", "failed"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Status must be one of: {', '.join(allowed_statuses)}"
+        )
+    
     # Get demo user for testing
     current_user = await get_demo_current_user(db)
     
     query = db.query(Keyword).filter(Keyword.tenant_id == current_user.tenant_id)
     
     if campaign_id:
+        # Validate campaign_id is a positive integer
+        if campaign_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Campaign ID must be a positive integer"
+            )
         query = query.filter(Keyword.campaign_id == campaign_id)
     
     if status:
@@ -412,6 +555,45 @@ async def delete_keyword(
     db.commit()
     
     return {"message": "Keyword deleted successfully"}
+
+@router.post("/bulk-delete")
+async def bulk_delete_keywords(
+    keyword_ids: List[int],
+    db: Session = Depends(get_db)
+):
+    """Delete multiple keywords"""
+    
+    # Get demo user for testing
+    current_user = await get_demo_current_user(db)
+    
+    # Validate that all keywords belong to the current tenant
+    keywords = db.query(Keyword).filter(
+        Keyword.id.in_(keyword_ids),
+        Keyword.tenant_id == current_user.tenant_id
+    ).all()
+    
+    if len(keywords) != len(keyword_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Some keywords not found or don't belong to your account"
+        )
+    
+    # Delete all keywords
+    for keyword in keywords:
+        # Also delete any associated blogs
+        blogs = db.query(GeneratedBlog).filter(
+            GeneratedBlog.keyword_id == keyword.id
+        ).all()
+        for blog in blogs:
+            db.delete(blog)
+        db.delete(keyword)
+    
+    db.commit()
+    
+    return {
+        "message": f"Successfully deleted {len(keywords)} keywords",
+        "deleted_count": len(keywords)
+    }
 
 @router.post("/{keyword_id}/reset")
 async def reset_keyword(
