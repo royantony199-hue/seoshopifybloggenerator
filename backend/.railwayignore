@@ -1,0 +1,6 @@
+railway-start.sh
+venv/
+__pycache__/
+*.pyc
+.env*
+backups/
