@@ -170,7 +170,7 @@ def main():
         print("   - Click 'Save API Keys'")
         
         print("\n   Option B: Use the command line")
-        print("   python3 update_api_key.py sk-proj-YOUR_ACTUAL_KEY")
+        print("   python3 update_api_key.py YOUR_ACTUAL_KEY")
         
         print("\n2. GENERATE BLOGS:")
         print("   - Go to http://localhost:3000/keywords")
@@ -186,7 +186,7 @@ def main():
         print(f"   - Store: {store.store_name}")
         print(f"   - Keywords: {db.query(Keyword).filter(Keyword.tenant_id == user.tenant_id).count()}")
         
-        if not user.openai_api_key or user.openai_api_key.startswith("sk-test"):
+        if not user.openai_api_key or len(user.openai_api_key) < 20:
             print("\n⚠️  WARNING: OpenAI API key is not set or is invalid!")
             print("   Blog generation will fail until you add a valid key.")
         

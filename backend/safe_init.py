@@ -36,7 +36,7 @@ def safe_database_init():
         
         # If user exists, check data integrity
         if user:
-            api_key_exists = bool(user.openai_api_key and not user.openai_api_key.startswith("sk-test"))
+            api_key_exists = bool(user.openai_api_key and len(user.openai_api_key) > 20)
             products_exist = db.query(Product).filter(Product.tenant_id == user.tenant_id).count() > 0
             
             print(f"✅ User exists: {user.email}")

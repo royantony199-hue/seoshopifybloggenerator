@@ -50,9 +50,9 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1:
         new_key = sys.argv[1]
-        if new_key.startswith("sk-"):
+        if len(new_key) > 20:
             update_openai_key(new_key)
         else:
-            print("\n❌ Invalid key format. OpenAI keys start with 'sk-'")
+            print("\n❌ Invalid key format. Key too short.")
     else:
         print("\n⚠️  No key provided. Use the command above to update.")
