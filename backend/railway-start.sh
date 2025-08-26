@@ -12,4 +12,4 @@ python -m alembic upgrade head || echo "Migration failed, continuing..."
 
 # Start the application with production settings
 echo "🚀 Starting application..."
-exec uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

@@ -482,7 +482,7 @@ const SettingsPage: React.FC = () => {
                   type={showOpenAIKey ? 'text' : 'password'}
                   value={openAIKey}
                   onChange={(e) => setOpenAIKey(e.target.value)}
-                  placeholder="sk-proj-..."
+                  placeholder="your-openai-api-key-here"
                   InputProps={{
                     endAdornment: (
                       <IconButton
@@ -731,7 +731,7 @@ const SettingsPage: React.FC = () => {
                       type={showShopifyKey ? 'text' : 'password'}
                       value={store.access_token}
                       onChange={(e) => handleUpdateStore(index, 'access_token', e.target.value)}
-                      placeholder="shpat_..."
+                      placeholder="your-shopify-access-token"
                       InputProps={{
                         endAdornment: (
                           <IconButton

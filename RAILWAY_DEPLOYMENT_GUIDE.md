@@ -67,7 +67,7 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}
 REDIS_URL=${{Redis.REDIS_URL}}
 
 # External APIs (ADD YOUR REAL API KEYS)
-OPENAI_API_KEY=sk-your-real-openai-api-key-here
+OPENAI_API_KEY=your-real-openai-api-key-here
 SERPER_API_KEY=your-serper-api-key-here
 
 # CORS (UPDATE WITH YOUR FRONTEND DOMAIN)

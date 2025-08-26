@@ -24,8 +24,8 @@ git commit -m "🔒 Security fix: Remove API key patterns and backup files
 - Maintain functionality while improving security
 
 Files fixed:
-- backend/setup_blog_generation.py: Remove sk-proj pattern
-- backend/safe_init.py: Replace sk-test pattern with length check  
+- backend/setup_blog_generation.py: Remove API key pattern validation
+- backend/safe_init.py: Replace API key pattern with length check  
 - backend/update_api_key.py: Use length validation instead of prefix check
 - Remove backend/backups/*.json files with real credentials
 
