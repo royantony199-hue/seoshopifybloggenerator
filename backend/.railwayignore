@@ -1,6 +1,9 @@
 railway-start.sh
+keep_server_running.sh
+run_server.py
 venv/
 __pycache__/
 *.pyc
 .env*
 backups/
+*.log
