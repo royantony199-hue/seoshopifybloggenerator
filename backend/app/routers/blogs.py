@@ -28,6 +28,7 @@ class BlogGenerateRequest(BaseModel):
     store_id: int
     template_type: Optional[str] = "ecommerce_general"
     auto_publish: bool = False
+    allow_regenerate: bool = False  # Allow generating new articles for keywords that already have content
 
 class BlogResponse(BaseModel):
     id: int
@@ -677,17 +678,37 @@ async def generate_blogs(
         )
     
     # Validate keywords belong to user's tenant
-    keywords = db.query(Keyword).filter(
-        Keyword.id.in_(request.keyword_ids),
-        Keyword.tenant_id == current_user.tenant_id,
-        Keyword.status == "pending"
-    ).all()
-    
-    if len(keywords) != len(request.keyword_ids):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Some keywords not found or already processed"
-        )
+    if request.allow_regenerate:
+        # Allow regenerating - accept any keyword status
+        keywords = db.query(Keyword).filter(
+            Keyword.id.in_(request.keyword_ids),
+            Keyword.tenant_id == current_user.tenant_id
+        ).all()
+
+        if len(keywords) != len(request.keyword_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Some keywords not found"
+            )
+
+        # Reset keywords to pending status for regeneration
+        for keyword in keywords:
+            keyword.status = "pending"
+            keyword.blog_generated = False
+        db.commit()
+    else:
+        # Original behavior - only pending keywords
+        keywords = db.query(Keyword).filter(
+            Keyword.id.in_(request.keyword_ids),
+            Keyword.tenant_id == current_user.tenant_id,
+            Keyword.status == "pending"
+        ).all()
+
+        if len(keywords) != len(request.keyword_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Some keywords not found or already processed. Enable 'Allow Regenerate' to create new articles for existing keywords."
+            )
     
     # Validate store
     store = db.query(ShopifyStore).filter(

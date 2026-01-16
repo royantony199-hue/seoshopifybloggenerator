@@ -117,6 +117,7 @@ const KeywordsPage: React.FC = () => {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [autoPublish, setAutoPublish] = useState(false);
+  const [allowRegenerate, setAllowRegenerate] = useState(false);  // Allow generating new articles for existing keywords
   const [keywordLoading, setKeywordLoading] = useState<{ [key: number]: boolean }>({});
   
   // Error handling
@@ -364,7 +365,8 @@ const KeywordsPage: React.FC = () => {
         keyword_ids: selectedKeywords,
         store_id: selectedStore,
         template_type: templateType,
-        auto_publish: autoPublish
+        auto_publish: autoPublish,
+        allow_regenerate: allowRegenerate
       });
 
       setGenerateDialogOpen(false);
@@ -380,9 +382,13 @@ const KeywordsPage: React.FC = () => {
     }
   };
 
-  const eligibleKeywords = keywords.filter(k => k.status === 'pending' && !k.blog_generated);
+  // When allowRegenerate is enabled, all non-processing keywords are eligible
+  const eligibleKeywords = allowRegenerate
+    ? keywords.filter(k => k.status !== 'processing')
+    : keywords.filter(k => k.status === 'pending' && !k.blog_generated);
   const failedKeywords = keywords.filter(k => k.status === 'failed');
-  const selectedEligibleCount = selectedKeywords.filter(id => 
+  const completedKeywords = keywords.filter(k => k.status === 'completed' || k.blog_generated);
+  const selectedEligibleCount = selectedKeywords.filter(id =>
     eligibleKeywords.some(k => k.id === id)
   ).length;
 
@@ -799,22 +805,37 @@ const KeywordsPage: React.FC = () => {
                                   disabled={keywordLoading[keyword.id!] || generating}
                                   color={keyword.status === 'failed' ? 'warning' : 'primary'}
                                 >
-                                  {keywordLoading[keyword.id!] 
-                                    ? 'Processing...' 
-                                    : keyword.status === 'failed' 
-                                    ? 'Retry Blog' 
+                                  {keywordLoading[keyword.id!]
+                                    ? 'Processing...'
+                                    : keyword.status === 'failed'
+                                    ? 'Retry Blog'
                                     : 'Generate Blog'
                                   }
                                 </Button>
+                              ) : keyword.blog_generated ? (
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<Replay />}
+                                  onClick={() => {
+                                    setSelectedKeywords([keyword.id!]);
+                                    setAllowRegenerate(true);
+                                    setGenerateDialogOpen(true);
+                                  }}
+                                  disabled={generating}
+                                  color="secondary"
+                                >
+                                  Regenerate
+                                </Button>
                               ) : (
                                 <Chip
-                                  label={keyword.blog_generated ? 'Blog Created' : 'Not Available'}
+                                  label="Not Available"
                                   size="small"
-                                  color={keyword.blog_generated ? 'success' : 'default'}
+                                  color="default"
                                   variant="outlined"
                                 />
                               )}
-                              
+
                               <Button
                                 size="small"
                                 variant="outlined"
@@ -1125,6 +1146,26 @@ organic CBD products, 8500, Wellness, 42`}
             />
             <Typography>Auto-publish blogs to Shopify after generation</Typography>
           </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+            <Checkbox
+              checked={allowRegenerate}
+              onChange={(e) => setAllowRegenerate(e.target.checked)}
+            />
+            <Box>
+              <Typography>Allow regenerating existing keywords</Typography>
+              <Typography variant="caption" color="textSecondary">
+                Creates new articles for keywords that already have content
+              </Typography>
+            </Box>
+          </Box>
+
+          {allowRegenerate && completedKeywords.length > 0 && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              <strong>Regeneration enabled!</strong> This will create NEW articles for selected keywords,
+              even if they already have content. {completedKeywords.length} keywords have existing content.
+            </Alert>
+          )}
 
           <Alert severity="info" sx={{ mt: 2 }}>
             <strong>Estimated time:</strong> {selectedEligibleCount * 3} minutes<br />

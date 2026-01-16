@@ -595,6 +595,77 @@ async def bulk_delete_keywords(
         "deleted_count": len(keywords)
     }
 
+class BulkKeywordImport(BaseModel):
+    keywords: List[dict]  # List of {keyword, search_volume?, category?, keyword_difficulty?}
+
+@router.post("/import-bulk")
+async def import_keywords_bulk(
+    data: BulkKeywordImport,
+    db: Session = Depends(get_db)
+):
+    """Import keywords from JSON array - useful for API-based imports"""
+
+    # Get demo user for testing
+    current_user = await get_demo_current_user(db)
+
+    # Get or create default campaign
+    campaign = db.query(KeywordCampaign).filter(
+        KeywordCampaign.tenant_id == current_user.tenant_id
+    ).first()
+
+    if not campaign:
+        campaign = KeywordCampaign(
+            tenant_id=current_user.tenant_id,
+            name="Imported Keywords",
+            template_type="health_wellness"
+        )
+        db.add(campaign)
+        db.commit()
+        db.refresh(campaign)
+
+    keywords_added = 0
+    keywords_skipped = 0
+
+    for kw_data in data.keywords:
+        keyword_text = str(kw_data.get('keyword', '')).strip().lower()
+
+        if not keyword_text:
+            keywords_skipped += 1
+            continue
+
+        # Check if keyword already exists
+        existing = db.query(Keyword).filter(
+            Keyword.tenant_id == current_user.tenant_id,
+            Keyword.keyword == keyword_text
+        ).first()
+
+        if existing:
+            keywords_skipped += 1
+            continue
+
+        # Create new keyword
+        keyword = Keyword(
+            tenant_id=current_user.tenant_id,
+            campaign_id=campaign.id,
+            keyword=keyword_text,
+            search_volume=kw_data.get('search_volume'),
+            keyword_difficulty=kw_data.get('keyword_difficulty'),
+            category=kw_data.get('category', 'General'),
+            status="pending"
+        )
+
+        db.add(keyword)
+        keywords_added += 1
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Import complete: {keywords_added} keywords added, {keywords_skipped} skipped",
+        "keywords_added": keywords_added,
+        "keywords_skipped": keywords_skipped
+    }
+
 @router.post("/{keyword_id}/reset")
 async def reset_keyword(
     keyword_id: int,

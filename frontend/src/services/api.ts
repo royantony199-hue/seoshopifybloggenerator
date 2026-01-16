@@ -114,6 +114,7 @@ export const blogsApi = {
     store_id: number;
     template_type?: string;
     auto_publish?: boolean;
+    allow_regenerate?: boolean;
   }) => {
     const response = await fetch(`${API_BASE}/api/blogs/generate`, {
       method: 'POST',
