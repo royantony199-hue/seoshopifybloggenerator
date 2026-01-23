@@ -33,6 +33,12 @@ if SENTRY_AVAILABLE and settings.SENTRY_DSN:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager with proper database initialization"""
+    # Log database configuration at startup
+    db_url = settings.DATABASE_URL
+    db_type = "PostgreSQL" if "postgresql" in db_url else "SQLite"
+    print(f"🔧 Database: {db_type}")
+    print(f"🔧 DATABASE_URL starts with: {db_url[:50]}...")
+
     # Startup - ensure database tables exist
     try:
         await create_tables()

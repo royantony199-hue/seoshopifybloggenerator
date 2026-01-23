@@ -3,7 +3,7 @@
 Configuration management for SEO Blog Automation SaaS
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 from typing import List, Optional
 import os
@@ -97,10 +97,12 @@ class Settings(BaseSettings):
     PROFESSIONAL_MONTHLY_BLOGS: int = 500
     ENTERPRISE_MONTHLY_BLOGS: int = 2000
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"  # Allow extra fields from .env
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 # Create global settings instance
 settings = Settings()
