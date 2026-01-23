@@ -143,7 +143,14 @@ class BlogGenerator:
             product_integration = f"""
             - Naturally integrate this product recommendation: "{store_info.get('product_integration_text', f'For premium quality products, check out: {store_info["default_product_url"]}')}"
             """
-        
+
+        # Pre-generate TOC HTML to avoid f-string backslash issues in Python 3.12+
+        toc_items = []
+        for section in template["sections"]:
+            section_id = section.lower().replace(' ', '-').replace('&', '')
+            toc_items.append(f'<li><a href="#{section_id}">{section}</a></li>')
+        toc_html = "".join(toc_items)
+
         prompt = f'''Create a comprehensive, SEO-optimized blog post about "{keyword}" using the {template["name"]} template.
 
 STRICT REQUIREMENTS:
@@ -170,7 +177,7 @@ EXACT HTML STRUCTURE:
     
     <h2>Table of Contents</h2>
     <ul>
-        {"".join([f"<li><a href=\"#{section.lower().replace(' ', '-').replace('&', '')}\">{section}</a></li>" for section in template["sections"]])}
+        {toc_html}
     </ul>
     
     <!-- Generate comprehensive sections based on template sections -->
