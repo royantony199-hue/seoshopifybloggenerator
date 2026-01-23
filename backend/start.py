@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
-Railway startup script that handles PORT environment variable correctly
+Railway startup script with proper timeout configuration for article generation
 """
 import os
 import sys
-import uvicorn
 
 if __name__ == "__main__":
     # Get port from environment variable, default to 8000
     port = int(os.environ.get("PORT", 8000))
-    
-    print(f"🚀 Starting SEO Blog Automation SaaS on port {port}")
-    print(f"📁 Current working directory: {os.getcwd()}")
-    print(f"🐍 Python path: {sys.path}")
-    
-    # Start uvicorn server
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        workers=1,  # Single worker for Railway
-        log_level="info"
+
+    print(f"Starting SEO Blog Automation SaaS on port {port}")
+    print(f"Current working directory: {os.getcwd()}")
+
+    # Use gunicorn for production with longer timeout for article generation
+    # Article generation with OpenAI can take 30-60+ seconds
+    os.system(
+        f"gunicorn app.main:app "
+        f"--bind 0.0.0.0:{port} "
+        f"--workers 1 "
+        f"--worker-class uvicorn.workers.UvicornWorker "
+        f"--timeout 300 "  # 5 minute timeout for long article generation
+        f"--graceful-timeout 120 "
+        f"--keep-alive 5 "
+        f"--log-level info "
+        f"--access-logfile - "
+        f"--error-logfile -"
     )

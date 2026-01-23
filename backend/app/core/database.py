@@ -12,8 +12,23 @@ from typing import Optional
 
 from app.core.config import settings
 
-# Database connection
-engine = create_engine(settings.DATABASE_URL)
+# Database connection with proper configuration
+if settings.DATABASE_URL.startswith("sqlite"):
+    # SQLite specific configuration for better concurrency
+    engine = create_engine(
+        settings.DATABASE_URL,
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True
+    )
+else:
+    # PostgreSQL / other databases
+    engine = create_engine(
+        settings.DATABASE_URL,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=300
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
