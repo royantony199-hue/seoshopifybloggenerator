@@ -207,7 +207,7 @@ def seed_keywords_for_tenant(db: Session, tenant_id: int):
         tenant_id=tenant_id,
         name="Blue Lotus SEO Keywords",
         description="Pre-loaded keywords for Blue Lotus and wellness products",
-        template_type="health_wellness"
+        template_type="cbd_wellness"
     )
     db.add(campaign)
     db.commit()

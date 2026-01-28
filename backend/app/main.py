@@ -408,13 +408,13 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
                 db.commit()
 
                 # Generate blog content
-                template_config = {"template_type": "health_wellness"}
+                template_config = {"template_type": "cbd_wellness"}
                 store_info = {
                     "shop_url": "",
                     "blog_handle": "",
                     "default_product_url": "",
                     "product_integration_text": "",
-                    "template_type": "health_wellness",
+                    "template_type": "cbd_wellness",
                     "products": []
                 }
 

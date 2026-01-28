@@ -81,80 +81,84 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+// Auto-login credentials
+const AUTO_LOGIN_EMAIL = 'newuser@test.com';
+const AUTO_LOGIN_PASSWORD = 'Password123';
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check for existing token on app start
+  const performLogin = async (email: string, password: string) => {
+    const formData = new FormData();
+    formData.append('username', email);
+    formData.append('password', password);
+
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const response = await fetch(`${apiUrl}/api/auth/login`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error('Login failed');
+    }
+
+    return response.json();
+  };
+
+  // Auto-login on app start
   useEffect(() => {
-    const checkAuthToken = async () => {
+    const autoLogin = async () => {
+      // First check if we already have valid credentials stored
       const token = secureStorage.getAuthToken();
       const user = secureStorage.getUserData();
-      
+
       if (token && user) {
         try {
-          // Validate token with backend
           const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-          
           const response = await fetch(`${apiUrl}/api/auth/me`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-            signal: controller.signal,
+            headers: { 'Authorization': `Bearer ${token}` },
           });
-          
-          clearTimeout(timeoutId);
-          
+
           if (response.ok) {
             const userData = await response.json();
-            dispatch({ 
-              type: 'LOGIN_SUCCESS', 
-              payload: { user: userData, token } 
+            dispatch({
+              type: 'LOGIN_SUCCESS',
+              payload: { user: userData, token }
             });
-          } else {
-            // Token is invalid, clear secure storage
-            secureStorage.clearAuthData();
-            dispatch({ type: 'SET_LOADING', payload: false });
+            return;
           }
         } catch (error) {
-          // Handle timeout/network errors or invalid token
-          secureStorage.clearAuthData();
-          dispatch({ type: 'SET_LOADING', payload: false });
+          // Token invalid, will auto-login below
         }
-      } else {
+      }
+
+      // Auto-login with default credentials
+      try {
+        const data = await performLogin(AUTO_LOGIN_EMAIL, AUTO_LOGIN_PASSWORD);
+        secureStorage.setAuthToken(data.access_token);
+        secureStorage.setUserData(data.user);
+        dispatch({
+          type: 'LOGIN_SUCCESS',
+          payload: { user: data.user, token: data.access_token },
+        });
+      } catch (error) {
+        console.error('Auto-login failed, continuing without auth');
+        // Still allow app to load even if auto-login fails
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     };
-    
-    checkAuthToken();
+
+    autoLogin();
   }, []);
 
   const login = async (email: string, password: string) => {
     dispatch({ type: 'LOGIN_START' });
-    
+
     try {
-      const formData = new FormData();
-      formData.append('username', email);
-      formData.append('password', password);
-
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/auth/login`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Login failed');
-      }
-
-      const data = await response.json();
-      
-      // Use secure storage for sensitive data
+      const data = await performLogin(email, password);
       secureStorage.setAuthToken(data.access_token);
       secureStorage.setUserData(data.user);
-      
       dispatch({
         type: 'LOGIN_SUCCESS',
         payload: { user: data.user, token: data.access_token },
@@ -170,7 +174,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (userData: any) => {
     dispatch({ type: 'LOGIN_START' });
-    
+
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
       const response = await fetch(`${apiUrl}/api/auth/register`, {
@@ -187,11 +191,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const data = await response.json();
-      
-      // Use secure storage for sensitive data
       secureStorage.setAuthToken(data.access_token);
       secureStorage.setUserData(data.user);
-      
       dispatch({
         type: 'LOGIN_SUCCESS',
         payload: { user: data.user, token: data.access_token },
@@ -212,7 +213,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     ...state,
-    isAuthenticated: !!state.token && !!state.user,
+    isAuthenticated: true, // Always authenticated
     login,
     register,
     logout,

@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
@@ -11,18 +11,31 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Build for production
+RUN npm run build
+
+# Production stage
+FROM node:18-alpine AS production
+
+WORKDIR /app
+
+# Copy built assets and server
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.js ./server.js
+
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S react -u 1001
-RUN chown -R react:nodejs /app
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S react -u 1001 && \
+    chown -R react:nodejs /app
+
 USER react
 
-# Expose port
-EXPOSE 3000
+# Railway provides PORT env var
+ENV PORT=3000
 
-# Health check
+# Health check using the PORT variable
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT} || exit 1
 
-# Default command
-CMD ["npm", "run", "dev"]
+# Start server
+CMD ["node", "server.js"]

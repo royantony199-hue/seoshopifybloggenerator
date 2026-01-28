@@ -55,6 +55,27 @@ interface TabPanelProps {
   value: number;
 }
 
+interface ShopifyStore {
+  id: number;
+  store_name: string;
+  shop_url: string;
+  access_token: string;
+  blog_handle: string;
+  is_active?: boolean;
+}
+
+interface Product {
+  id: number;
+  name: string;
+  description?: string;
+  url: string;
+  price?: string;
+  keywords?: string;
+  integration_text?: string;
+  priority: number;
+  is_active: boolean;
+}
+
 function TabPanel(props: TabPanelProps) {
   const { children, value, index, ...other } = props;
 
@@ -152,13 +173,13 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const [shopifyStores, setShopifyStores] = useState([]);
+  const [shopifyStores, setShopifyStores] = useState<ShopifyStore[]>([]);
 
   // Products State
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState(0);
   const [productDialogOpen, setProductDialogOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productFormData, setProductFormData] = useState({
     name: '',
     description: '',
