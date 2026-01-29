@@ -424,13 +424,13 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
                     store_info=store_info
                 )
 
-                if blog_content and blog_content.get("content"):
+                if blog_content and blog_content.get("content_html"):
                     # Save to database
                     new_blog = GeneratedBlog(
                         tenant_id=tenant_id,
                         keyword_id=keyword.id,
                         title=blog_content.get("title", f"Complete Guide to {keyword.keyword.title()}"),
-                        content_html=blog_content.get("content", ""),
+                        content_html=blog_content.get("content_html", ""),
                         meta_description=blog_content.get("meta_description", ""),
                         word_count=blog_content.get("word_count", 0),
                         status="draft",
