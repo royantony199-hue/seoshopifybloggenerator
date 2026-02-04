@@ -11,6 +11,10 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Set production API URL for build
+ENV VITE_API_URL=https://blue-lotus-seo-production.up.railway.app
+ENV VITE_ENVIRONMENT=production
+
 # Build for production
 RUN npm run build
 
