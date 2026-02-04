@@ -141,7 +141,6 @@ FRONTEND_HTML = """
                     <div class="card-body">
                         <h3 class="text-info" id="published-today">0</h3>
                         <small>Published Today</small>
-                        <div class="mt-1"><small class="text-muted" id="daily-limit-info">Limit: 0/10/day</small></div>
                     </div>
                 </div>
             </div>
@@ -173,6 +172,11 @@ FRONTEND_HTML = """
         <div class="card mt-4">
             <div class="card-header"><h5><i class="fas fa-list me-2"></i>Pending Articles</h5></div>
             <div class="card-body"><div id="pendingArticles">Loading...</div></div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header"><h5><i class="fas fa-check-circle me-2"></i>Published Articles</h5></div>
+            <div class="card-body"><div id="publishedArticles">Loading...</div></div>
         </div>
     </div>
 
@@ -245,11 +249,30 @@ FRONTEND_HTML = """
                 document.getElementById('published-articles').textContent = data.published_content || 0;
                 document.getElementById('keywords-remaining').textContent = data.remaining_keywords || 0;
                 document.getElementById('published-today').textContent = data.published_today || 0;
-                document.getElementById('daily-limit-info').textContent = 'Limit: ' + (data.published_today || 0) + '/10/day';
+            });
+        }
+
+        function loadPublishedArticles() {
+            fetch('/api/content').then(r => r.json()).then(data => {
+                const published = data.content ? data.content.filter(a => a.status === 'published') : [];
+                const container = document.getElementById('publishedArticles');
+                if (published.length > 0) {
+                    container.innerHTML = '<div class="table-responsive"><table class="table table-striped"><thead><tr><th>Title</th><th>Keyword</th><th>Live Link</th></tr></thead><tbody>' +
+                        published.map(a => `
+                            <tr>
+                                <td>${a.title}</td>
+                                <td><span class="badge bg-secondary">${a.keyword}</span></td>
+                                <td>${a.live_url ? '<a href="' + a.live_url + '" target="_blank" class="btn btn-sm btn-success"><i class="fas fa-external-link-alt me-1"></i>View Live</a>' : '<span class="text-muted">Pending sync</span>'}</td>
+                            </tr>
+                        `).join('') + '</tbody></table></div>';
+                } else {
+                    container.innerHTML = '<div class="alert alert-info">No published articles yet.</div>';
+                }
             });
         }
 
         loadPendingArticles();
+        loadPublishedArticles();
         loadStats();
     </script>
 </body>
@@ -315,9 +338,7 @@ async def get_simple_stats(db: Session = Depends(get_db)):
             "remaining_keywords": remaining_keywords,
             "pending_content": pending_blogs,
             "published_content": published_blogs,
-            "published_today": published_today,
-            "daily_limit": 10,
-            "remaining_today": max(0, 10 - published_today)
+            "published_today": published_today
         }
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
@@ -326,8 +347,6 @@ async def get_simple_stats(db: Session = Depends(get_db)):
             "pending_content": 0,
             "published_content": 0,
             "published_today": 0,
-            "daily_limit": 10,
-            "remaining_today": 10,
             "error": str(e)
         }
 
@@ -359,6 +378,7 @@ async def get_simple_content(db: Session = Depends(get_db)):
                 "keyword": keyword_text,
                 "search_volume": search_volume,
                 "status": "published" if blog.published else blog.status,
+                "live_url": blog.live_url,
                 "created_at": str(blog.created_at)
             })
 
