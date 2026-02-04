@@ -22,6 +22,7 @@ class StoreCreate(BaseModel):
     blog_handle: str = "news"
     auto_publish: bool = False
     default_product_url: Optional[str] = None
+    custom_domain: Optional[str] = None  # e.g., "www.imaginal.tech"
 
 class StoreUpdate(BaseModel):
     store_name: Optional[str] = None
@@ -30,6 +31,7 @@ class StoreUpdate(BaseModel):
     blog_handle: Optional[str] = None
     auto_publish: Optional[bool] = None
     default_product_url: Optional[str] = None
+    custom_domain: Optional[str] = None
     is_active: Optional[bool] = None
 
 class StoreResponse(BaseModel):
@@ -40,6 +42,7 @@ class StoreResponse(BaseModel):
     is_active: bool
     auto_publish: bool
     default_product_url: Optional[str]
+    custom_domain: Optional[str]
     created_at: datetime
     last_sync: Optional[datetime]
 
@@ -62,6 +65,7 @@ async def get_stores(db: Session = Depends(get_db)):
         is_active=store.is_active,
         auto_publish=store.auto_publish,
         default_product_url=store.default_product_url,
+        custom_domain=getattr(store, 'custom_domain', None),
         created_at=store.created_at,
         last_sync=store.last_sync
     ) for store in stores]
@@ -97,6 +101,7 @@ async def create_store(
         blog_handle=store_data.blog_handle,
         auto_publish=store_data.auto_publish,
         default_product_url=store_data.default_product_url,
+        custom_domain=store_data.custom_domain,
         is_active=True
     )
     
@@ -112,6 +117,7 @@ async def create_store(
         is_active=store.is_active,
         auto_publish=store.auto_publish,
         default_product_url=store.default_product_url,
+        custom_domain=getattr(store, 'custom_domain', None),
         created_at=store.created_at,
         last_sync=store.last_sync
     )
@@ -154,6 +160,7 @@ async def update_store(
         is_active=store.is_active,
         auto_publish=store.auto_publish,
         default_product_url=store.default_product_url,
+        custom_domain=getattr(store, 'custom_domain', None),
         created_at=store.created_at,
         last_sync=store.last_sync
     )
