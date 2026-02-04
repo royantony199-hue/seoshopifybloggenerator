@@ -295,7 +295,7 @@ class ShopifyPublisher:
     
     def __init__(self, store_info: dict):
         self.store_info = store_info
-        self.api_base = f"https://{store_info['shop_url']}.myshopify.com/admin/api/2025-07"
+        self.api_base = f"https://{store_info['shop_url']}.myshopify.com/admin/api/2024-10"
         self.headers = {
             'X-Shopify-Access-Token': store_info['access_token'],
             'Content-Type': 'application/json'
@@ -383,8 +383,9 @@ class ShopifyPublisher:
                 
                 if response.status_code == 201:
                     article = response.json()['article']
-                    # Use the actual domain instead of .myshopify.com
-                    live_url = f"https://www.imaginal.tech/blogs/{self.store_info['blog_handle']}/{handle}"
+                    # Use store's custom domain if available, otherwise use myshopify.com
+                    store_domain = self.store_info.get('custom_domain') or f"{self.store_info['shop_url']}.myshopify.com"
+                    live_url = f"https://{store_domain}/blogs/{self.store_info['blog_handle']}/{handle}"
                     
                     return {
                         "success": True,
@@ -611,7 +612,8 @@ def generate_single_blog(
             publisher = ShopifyPublisher({
                 "shop_url": store.shop_url,
                 "access_token": store.access_token,
-                "blog_handle": store.blog_handle
+                "blog_handle": store.blog_handle,
+                "custom_domain": getattr(store, 'custom_domain', None)
             })
             
             # Generate SEO-friendly handle from keyword
@@ -883,7 +885,8 @@ async def publish_blog(
     publisher = ShopifyPublisher({
         "shop_url": store.shop_url,
         "access_token": store.access_token,
-        "blog_handle": store.blog_handle
+        "blog_handle": store.blog_handle,
+        "custom_domain": getattr(store, 'custom_domain', None)
     })
     
     # Generate SEO-friendly handle from keyword

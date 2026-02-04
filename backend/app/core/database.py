@@ -100,6 +100,7 @@ class ShopifyStore(Base):
     shop_url = Column(String, nullable=False)  # e.g., "mystore"
     access_token = Column(String, nullable=False)
     blog_handle = Column(String, default="news")
+    custom_domain = Column(String, nullable=True)  # e.g., "www.imaginal.tech" for custom domains
     
     # Store settings
     is_active = Column(Boolean, default=True)
