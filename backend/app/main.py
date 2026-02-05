@@ -481,6 +481,17 @@ async def root():
     """Serve HTML frontend"""
     return FRONTEND_HTML
 
+@app.get("/debug/env")
+async def debug_env():
+    """Debug endpoint to check environment variables"""
+    import os
+    return {
+        "SHOPIFY_CLIENT_ID_set": bool(os.environ.get("SHOPIFY_CLIENT_ID")),
+        "SHOPIFY_CLIENT_SECRET_set": bool(os.environ.get("SHOPIFY_CLIENT_SECRET")),
+        "settings_client_id_set": bool(settings.SHOPIFY_CLIENT_ID),
+        "all_shopify_vars": [k for k in os.environ.keys() if "SHOPIFY" in k.upper()]
+    }
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
