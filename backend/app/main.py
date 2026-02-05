@@ -137,12 +137,14 @@ FRONTEND_HTML = """
                     <h1><i class="fas fa-leaf me-2"></i>Blue Lotus SEO Tool</h1>
                     <p class="mb-0">AI-Powered Content Generation & Publishing</p>
                 </div>
-                <div class="store-selector mt-2 mt-md-0">
+                <div class="store-selector mt-2 mt-md-0 d-flex align-items-center gap-2">
                     <label class="me-2"><i class="fas fa-store me-1"></i>Store:</label>
                     <select id="storeSelector" class="form-select-sm" onchange="switchStore()">
-                        <option value="perfectseed">Perfect Seed</option>
-                        <option value="trusttheplant">Trust The Plant</option>
+                        <option value="loading">Loading...</option>
                     </select>
+                    <button class="btn btn-sm btn-light" onclick="openConnectModal()" title="Connect New Store">
+                        <i class="fas fa-plus"></i>
+                    </button>
                 </div>
             </div>
         </div>
@@ -223,6 +225,44 @@ FRONTEND_HTML = """
         </div>
     </div>
 
+    <!-- OAuth Connect Modal -->
+    <div class="modal fade" id="connectModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-link me-2"></i>Connect Shopify Store</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Connect your Shopify store via OAuth. You'll be redirected to Shopify to authorize.
+                    </div>
+                    <div id="connectError" class="alert alert-danger d-none"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Store Name</label>
+                        <input type="text" class="form-control" id="oauthStoreName" placeholder="e.g., Trust The Plant">
+                        <small class="text-muted">A friendly name for this store</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Shop URL</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="oauthShopUrl" placeholder="e.g., bluelotusimaginal">
+                            <span class="input-group-text">.myshopify.com</span>
+                        </div>
+                        <small class="text-muted">Your Shopify store subdomain</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="connectOAuth()">
+                        <i class="fas fa-link me-2"></i>Connect to Shopify
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.getElementById('generateBtn').addEventListener('click', generateContent);
@@ -257,20 +297,99 @@ FRONTEND_HTML = """
             .finally(() => { btn.innerHTML = '<i class="fas fa-magic me-2"></i>Generate with OpenAI'; btn.disabled = false; });
         }
 
-        // Store data
-        const storeData = {
-            perfectseed: { name: 'Perfect Seed', url: 'perfectseed.myshopify.com', domain: 'www.imaginal.tech' },
-            trusttheplant: { name: 'Trust The Plant', url: 'bluelotusimaginal.myshopify.com', domain: null }
-        };
-        let currentStore = 'perfectseed';
+        // Store data (loaded dynamically)
+        let storeData = {};
+        let currentStore = '';
+
+        function loadStores() {
+            fetch('/api/store-options')
+            .then(r => r.json())
+            .then(data => {
+                const stores = data.stores || [];
+                const selector = document.getElementById('storeSelector');
+                selector.innerHTML = '';
+
+                if (stores.length === 0) {
+                    selector.innerHTML = '<option value="">No stores connected</option>';
+                    document.getElementById('currentStoreName').textContent = 'No store';
+                    document.getElementById('currentStoreUrl').textContent = 'Connect a store to publish';
+                    return;
+                }
+
+                stores.forEach((store, index) => {
+                    storeData[store.id] = {
+                        name: store.name,
+                        url: store.shop_url,
+                        domain: store.custom_domain,
+                        source: store.source
+                    };
+                    const option = document.createElement('option');
+                    option.value = store.id;
+                    option.textContent = store.name + (store.source === 'oauth' ? ' ✓' : '');
+                    selector.appendChild(option);
+                    if (index === 0) currentStore = store.id;
+                });
+
+                switchStore();
+            })
+            .catch(e => {
+                console.error('Failed to load stores:', e);
+                document.getElementById('storeSelector').innerHTML = '<option value="">Error loading stores</option>';
+            });
+        }
 
         function switchStore() {
             currentStore = document.getElementById('storeSelector').value;
+            if (!currentStore || !storeData[currentStore]) return;
+
             const store = storeData[currentStore];
             document.getElementById('currentStoreName').textContent = store.name;
             document.getElementById('currentStoreUrl').textContent = store.domain || store.url;
             loadPendingArticles();
             loadPublishedArticles();
+        }
+
+        // OAuth Connect functions
+        let connectModal;
+        function openConnectModal() {
+            if (!connectModal) connectModal = new bootstrap.Modal(document.getElementById('connectModal'));
+            document.getElementById('oauthStoreName').value = '';
+            document.getElementById('oauthShopUrl').value = '';
+            document.getElementById('connectError').classList.add('d-none');
+            connectModal.show();
+        }
+
+        function connectOAuth() {
+            const storeName = document.getElementById('oauthStoreName').value.trim();
+            const shopUrl = document.getElementById('oauthShopUrl').value.trim();
+            const errorDiv = document.getElementById('connectError');
+
+            if (!storeName || !shopUrl) {
+                errorDiv.textContent = 'Please fill in both Store Name and Shop URL';
+                errorDiv.classList.remove('d-none');
+                return;
+            }
+
+            errorDiv.classList.add('d-none');
+
+            fetch('/api/shopify/oauth/authorize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ shop_url: shopUrl, store_name: storeName })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.authorization_url) {
+                    window.location.href = data.authorization_url;
+                } else {
+                    errorDiv.textContent = data.detail || 'Failed to start OAuth flow';
+                    errorDiv.classList.remove('d-none');
+                }
+            })
+            .catch(e => {
+                errorDiv.textContent = 'Error: ' + e;
+                errorDiv.classList.remove('d-none');
+            });
         }
 
         function loadPendingArticles() {
@@ -343,8 +462,8 @@ FRONTEND_HTML = """
             });
         }
 
-        loadPendingArticles();
-        loadPublishedArticles();
+        // Initialize on page load
+        loadStores();
         loadStats();
     </script>
 </body>
