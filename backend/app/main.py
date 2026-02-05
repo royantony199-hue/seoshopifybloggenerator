@@ -32,6 +32,30 @@ from app.middleware.csrf import CSRFMiddleware, get_csrf_token
 
 logger = logging.getLogger(__name__)
 
+# Multi-Store Configuration (tokens loaded from environment variables)
+import os
+
+SHOPIFY_STORES = {
+    "perfectseed": {
+        "id": "perfectseed",
+        "name": "Perfect Seed",
+        "shop_url": "perfectseed",
+        "access_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_PERFECTSEED", os.environ.get("SHOPIFY_ACCESS_TOKEN", "")),
+        "blog_handle": "imaginal-tech",
+        "custom_domain": "www.imaginal.tech",
+        "api_version": "2024-01"
+    },
+    "trusttheplant": {
+        "id": "trusttheplant",
+        "name": "Trust The Plant",
+        "shop_url": "bluelotusimaginal",
+        "access_token": os.environ.get("SHOPIFY_ACCESS_TOKEN_TRUSTTHEPLANT", ""),
+        "blog_handle": "news",
+        "custom_domain": None,
+        "api_version": "2024-01"
+    }
+}
+
 # Initialize Sentry for error monitoring (optional)
 if SENTRY_AVAILABLE and settings.SENTRY_DSN:
     sentry_sdk.init(
@@ -100,17 +124,36 @@ FRONTEND_HTML = """
         .stat-card { border-radius: 15px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
         .btn-gradient { background: linear-gradient(45deg, #4CAF50, #2E7D32); border: none; color: white; }
         .btn-gradient:hover { background: linear-gradient(45deg, #2E7D32, #1B5E20); color: white; }
+        .store-selector { background: rgba(255,255,255,0.15); border-radius: 10px; padding: 10px 15px; }
+        .store-selector select { background: white; border: none; padding: 8px 15px; border-radius: 5px; font-weight: 500; }
+        .store-badge { font-size: 0.8rem; padding: 4px 10px; border-radius: 20px; }
     </style>
 </head>
 <body>
     <div class="hero-section py-4">
         <div class="container">
-            <h1><i class="fas fa-leaf me-2"></i>Blue Lotus SEO Tool</h1>
-            <p class="mb-0">AI-Powered Content Generation & Publishing</p>
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <h1><i class="fas fa-leaf me-2"></i>Blue Lotus SEO Tool</h1>
+                    <p class="mb-0">AI-Powered Content Generation & Publishing</p>
+                </div>
+                <div class="store-selector mt-2 mt-md-0">
+                    <label class="me-2"><i class="fas fa-store me-1"></i>Store:</label>
+                    <select id="storeSelector" class="form-select-sm" onchange="switchStore()">
+                        <option value="perfectseed">Perfect Seed</option>
+                        <option value="trusttheplant">Trust The Plant</option>
+                    </select>
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="container my-4">
+        <div class="alert alert-info d-flex align-items-center" id="storeInfo">
+            <i class="fas fa-info-circle me-2"></i>
+            <span>Publishing to: <strong id="currentStoreName">Perfect Seed</strong> (<span id="currentStoreUrl">perfectseed.myshopify.com</span>)</span>
+        </div>
+
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="card stat-card text-center">
@@ -214,6 +257,22 @@ FRONTEND_HTML = """
             .finally(() => { btn.innerHTML = '<i class="fas fa-magic me-2"></i>Generate with OpenAI'; btn.disabled = false; });
         }
 
+        // Store data
+        const storeData = {
+            perfectseed: { name: 'Perfect Seed', url: 'perfectseed.myshopify.com', domain: 'www.imaginal.tech' },
+            trusttheplant: { name: 'Trust The Plant', url: 'bluelotusimaginal.myshopify.com', domain: null }
+        };
+        let currentStore = 'perfectseed';
+
+        function switchStore() {
+            currentStore = document.getElementById('storeSelector').value;
+            const store = storeData[currentStore];
+            document.getElementById('currentStoreName').textContent = store.name;
+            document.getElementById('currentStoreUrl').textContent = store.domain || store.url;
+            loadPendingArticles();
+            loadPublishedArticles();
+        }
+
         function loadPendingArticles() {
             fetch('/api/content').then(r => r.json()).then(data => {
                 const pending = data.content ? data.content.filter(a => a.status === 'pending' || a.status === 'draft') : [];
@@ -221,9 +280,13 @@ FRONTEND_HTML = """
                 if (pending.length > 0) {
                     container.innerHTML = pending.map(a => `
                         <div class="card mb-2">
-                            <div class="card-body d-flex justify-content-between">
-                                <div><h6>${a.title}</h6><small>Keyword: ${a.keyword}</small></div>
-                                <button class="btn btn-sm btn-success" onclick="approveArticle(${a.id})">Approve</button>
+                            <div class="card-body d-flex justify-content-between align-items-center">
+                                <div><h6 class="mb-1">${a.title}</h6><small class="text-muted">Keyword: ${a.keyword}</small></div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-success" onclick="approveArticle(${a.id})">
+                                        <i class="fas fa-upload me-1"></i>Publish to ${storeData[currentStore].name}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     `).join('');
@@ -234,11 +297,19 @@ FRONTEND_HTML = """
         }
 
         function approveArticle(id) {
-            fetch('/api/publish/' + id, { method: 'POST' })
+            const store = storeData[currentStore];
+            if (!confirm('Publish this article to ' + store.name + '?')) return;
+
+            fetch('/api/publish/' + id + '?store_id=' + currentStore, { method: 'POST' })
             .then(r => r.json())
             .then(data => {
-                alert(data.status === 'success' ? 'Published!' : 'Error: ' + data.error);
+                if (data.status === 'success') {
+                    alert('Published to ' + store.name + '!\\n\\nLive URL: ' + (data.url || 'Pending'));
+                } else {
+                    alert('Error: ' + data.error);
+                }
                 loadPendingArticles();
+                loadPublishedArticles();
                 loadStats();
             });
         }
@@ -257,11 +328,12 @@ FRONTEND_HTML = """
                 const published = data.content ? data.content.filter(a => a.status === 'published') : [];
                 const container = document.getElementById('publishedArticles');
                 if (published.length > 0) {
-                    container.innerHTML = '<div class="table-responsive"><table class="table table-striped"><thead><tr><th>Title</th><th>Keyword</th><th>Live Link</th></tr></thead><tbody>' +
+                    container.innerHTML = '<div class="table-responsive"><table class="table table-striped"><thead><tr><th>Title</th><th>Keyword</th><th>Store</th><th>Live Link</th></tr></thead><tbody>' +
                         published.map(a => `
                             <tr>
                                 <td>${a.title}</td>
                                 <td><span class="badge bg-secondary">${a.keyword}</span></td>
+                                <td><span class="badge ${a.store_id === 'trusttheplant' ? 'bg-info' : 'bg-primary'}">${a.store_name || 'Perfect Seed'}</span></td>
                                 <td>${a.live_url ? '<a href="' + a.live_url + '" target="_blank" class="btn btn-sm btn-success"><i class="fas fa-external-link-alt me-1"></i>View Live</a>' : '<span class="text-muted">Pending sync</span>'}</td>
                             </tr>
                         `).join('') + '</tbody></table></div>';
@@ -372,6 +444,10 @@ async def get_simple_content(db: Session = Depends(get_db)):
                     keyword_text = kw.keyword
                     search_volume = kw.search_volume or 0
 
+            # Get store info from template_used field (stores which store it was published to)
+            store_id = blog.template_used if blog.template_used in SHOPIFY_STORES else "perfectseed"
+            store_name = SHOPIFY_STORES.get(store_id, {}).get("name", "Perfect Seed")
+
             content.append({
                 "id": blog.id,
                 "title": blog.title,
@@ -379,6 +455,8 @@ async def get_simple_content(db: Session = Depends(get_db)):
                 "search_volume": search_volume,
                 "status": "published" if blog.published else blog.status,
                 "live_url": blog.live_url,
+                "store_id": store_id if blog.published else None,
+                "store_name": store_name if blog.published else None,
                 "created_at": str(blog.created_at)
             })
 
@@ -495,9 +573,26 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
             "error": str(e)
         }
 
+@app.get("/api/stores")
+async def get_stores():
+    """Get available Shopify stores"""
+    stores = []
+    for store_id, store in SHOPIFY_STORES.items():
+        stores.append({
+            "id": store_id,
+            "name": store["name"],
+            "shop_url": f"{store['shop_url']}.myshopify.com",
+            "blog_handle": store["blog_handle"],
+            "custom_domain": store.get("custom_domain")
+        })
+    return {"stores": stores}
+
+
 @app.post("/api/publish/{blog_id}")
-async def publish_simple_content(blog_id: int, db: Session = Depends(get_db)):
-    """Publish a single article"""
+async def publish_simple_content(blog_id: int, store_id: str = "perfectseed", db: Session = Depends(get_db)):
+    """Publish a single article to selected Shopify store"""
+    import requests
+
     try:
         user = await get_demo_current_user(db)
         tenant_id = user.tenant_id
@@ -510,17 +605,91 @@ async def publish_simple_content(blog_id: int, db: Session = Depends(get_db)):
         if not blog:
             return {"status": "error", "error": "Article not found"}
 
-        # Mark as published
-        blog.published = True
-        blog.status = "published"
-        blog.published_at = datetime.utcnow()
-        db.commit()
+        # Get store configuration
+        if store_id not in SHOPIFY_STORES:
+            return {"status": "error", "error": f"Store '{store_id}' not found"}
 
-        return {
-            "status": "success",
-            "message": "Article published successfully!",
-            "url": blog.live_url or f"/content/{blog_id}"
+        store = SHOPIFY_STORES[store_id]
+        shop_url = store["shop_url"]
+        access_token = store["access_token"]
+        blog_handle = store["blog_handle"]
+        api_version = store.get("api_version", "2024-01")
+        custom_domain = store.get("custom_domain")
+
+        # First, get the blog ID from the blog handle
+        blog_list_url = f"https://{shop_url}.myshopify.com/admin/api/{api_version}/blogs.json"
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json"
         }
+
+        blogs_response = requests.get(blog_list_url, headers=headers)
+        if blogs_response.status_code != 200:
+            logger.error(f"Failed to get blogs: {blogs_response.text}")
+            return {"status": "error", "error": f"Failed to connect to Shopify: {blogs_response.status_code}"}
+
+        blogs_data = blogs_response.json()
+        shopify_blog_id = None
+
+        for shopify_blog in blogs_data.get("blogs", []):
+            if shopify_blog.get("handle") == blog_handle or shopify_blog.get("title").lower() == blog_handle.lower():
+                shopify_blog_id = shopify_blog["id"]
+                break
+
+        if not shopify_blog_id:
+            return {"status": "error", "error": f"Blog '{blog_handle}' not found in Shopify store"}
+
+        # Create the article in Shopify
+        article_url = f"https://{shop_url}.myshopify.com/admin/api/{api_version}/blogs/{shopify_blog_id}/articles.json"
+
+        article_data = {
+            "article": {
+                "title": blog.title,
+                "body_html": blog.content_html,
+                "published": True,
+                "tags": "seo, blue lotus, wellness"
+            }
+        }
+
+        if blog.meta_description:
+            article_data["article"]["summary_html"] = f"<p>{blog.meta_description}</p>"
+
+        response = requests.post(article_url, headers=headers, json=article_data)
+
+        if response.status_code in [200, 201]:
+            article_result = response.json()
+            shopify_article = article_result.get("article", {})
+            article_id = shopify_article.get("id")
+            article_handle = shopify_article.get("handle")
+
+            # Build live URL
+            if custom_domain:
+                live_url = f"https://{custom_domain}/blogs/{blog_handle}/{article_handle}"
+            else:
+                live_url = f"https://{shop_url}.myshopify.com/blogs/{blog_handle}/{article_handle}"
+
+            # Update blog record
+            blog.published = True
+            blog.status = "published"
+            blog.published_at = datetime.utcnow()
+            blog.shopify_article_id = str(article_id)
+            blog.shopify_handle = article_handle
+            blog.live_url = live_url
+            blog.template_used = store_id  # Store which store it was published to
+            db.commit()
+
+            return {
+                "status": "success",
+                "message": f"Article published to {store['name']}!",
+                "url": live_url,
+                "store": store["name"],
+                "article_id": article_id
+            }
+        else:
+            error_msg = response.json().get("errors", response.text)
+            logger.error(f"Shopify publish error: {error_msg}")
+            return {"status": "error", "error": f"Shopify error: {error_msg}"}
+
     except Exception as e:
         logger.error(f"Error publishing content: {e}")
         return {"status": "error", "error": str(e)}
