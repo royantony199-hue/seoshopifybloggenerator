@@ -22,8 +22,8 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 from app.core.config import settings
-from app.core.database import create_tables, get_db, Keyword, GeneratedBlog, Tenant
-from app.routers import auth, users, stores, keywords, blogs, analytics, billing, products
+from app.core.database import create_tables, get_db, Keyword, GeneratedBlog, Tenant, ShopifyStore
+from app.routers import auth, users, stores, keywords, blogs, analytics, billing, products, shopify_oauth
 from app.routers import settings as settings_router
 from app.routers.demo_auth import get_demo_current_user
 from app.middleware.tenant import TenantMiddleware
@@ -574,17 +574,48 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
         }
 
 @app.get("/api/store-options")
-async def get_store_options():
-    """Get available Shopify stores for dropdown selector"""
+async def get_store_options(db: Session = Depends(get_db)):
+    """Get available Shopify stores for dropdown selector (includes OAuth-connected stores)"""
     stores = []
+    seen_shop_urls = set()
+
+    # Get current user for database stores
+    try:
+        user = await get_demo_current_user(db)
+        tenant_id = user.tenant_id
+
+        # First, get OAuth-connected stores from database
+        db_stores = db.query(ShopifyStore).filter(
+            ShopifyStore.tenant_id == tenant_id,
+            ShopifyStore.is_active == True
+        ).all()
+
+        for db_store in db_stores:
+            if db_store.access_token:  # Only include stores with valid tokens
+                stores.append({
+                    "id": db_store.shop_url,  # Use shop_url as ID for consistency
+                    "name": db_store.store_name,
+                    "shop_url": f"{db_store.shop_url}.myshopify.com",
+                    "blog_handle": db_store.blog_handle or "news",
+                    "custom_domain": db_store.custom_domain,
+                    "source": "oauth"
+                })
+                seen_shop_urls.add(db_store.shop_url)
+    except Exception as e:
+        logger.warning(f"Could not fetch database stores: {e}")
+
+    # Then add legacy stores (if not already connected via OAuth)
     for store_id, store in SHOPIFY_STORES.items():
-        stores.append({
-            "id": store_id,
-            "name": store["name"],
-            "shop_url": f"{store['shop_url']}.myshopify.com",
-            "blog_handle": store["blog_handle"],
-            "custom_domain": store.get("custom_domain")
-        })
+        if store["shop_url"] not in seen_shop_urls and store.get("access_token"):
+            stores.append({
+                "id": store_id,
+                "name": store["name"],
+                "shop_url": f"{store['shop_url']}.myshopify.com",
+                "blog_handle": store["blog_handle"],
+                "custom_domain": store.get("custom_domain"),
+                "source": "legacy"
+            })
+
     return {"stores": stores}
 
 
@@ -605,16 +636,52 @@ async def publish_simple_content(blog_id: int, store_id: str = "perfectseed", db
         if not blog:
             return {"status": "error", "error": "Article not found"}
 
-        # Get store configuration
-        if store_id not in SHOPIFY_STORES:
-            return {"status": "error", "error": f"Store '{store_id}' not found"}
+        # Try to get store from database first (OAuth-connected stores)
+        db_store = db.query(ShopifyStore).filter(
+            ShopifyStore.tenant_id == tenant_id,
+            ShopifyStore.shop_url == store_id,
+            ShopifyStore.is_active == True
+        ).first()
 
-        store = SHOPIFY_STORES[store_id]
-        shop_url = store["shop_url"]
-        access_token = store["access_token"]
-        blog_handle = store["blog_handle"]
-        api_version = store.get("api_version", "2024-01")
-        custom_domain = store.get("custom_domain")
+        # Also try matching by store name (for trusttheplant -> bluelotusimaginal mapping)
+        if not db_store:
+            # Map legacy store_id to shop_url
+            legacy_mapping = {
+                "perfectseed": "perfectseed",
+                "trusttheplant": "bluelotusimaginal"
+            }
+            mapped_url = legacy_mapping.get(store_id, store_id)
+            db_store = db.query(ShopifyStore).filter(
+                ShopifyStore.tenant_id == tenant_id,
+                ShopifyStore.shop_url == mapped_url,
+                ShopifyStore.is_active == True
+            ).first()
+
+        if db_store and db_store.access_token:
+            # Use database store (OAuth-connected)
+            shop_url = db_store.shop_url
+            access_token = db_store.access_token
+            blog_handle = db_store.blog_handle or "news"
+            custom_domain = db_store.custom_domain
+            api_version = "2024-01"
+            store_name = db_store.store_name
+            logger.info(f"Using OAuth-connected store: {shop_url}")
+        elif store_id in SHOPIFY_STORES:
+            # Fallback to hardcoded config (legacy support)
+            store = SHOPIFY_STORES[store_id]
+            shop_url = store["shop_url"]
+            access_token = store["access_token"]
+            blog_handle = store["blog_handle"]
+            api_version = store.get("api_version", "2024-01")
+            custom_domain = store.get("custom_domain")
+            store_name = store["name"]
+            logger.info(f"Using legacy store config: {store_id}")
+        else:
+            return {"status": "error", "error": f"Store '{store_id}' not found. Connect it via OAuth first."}
+
+        # Verify we have a token
+        if not access_token:
+            return {"status": "error", "error": f"No access token for store '{store_id}'. Please connect via OAuth."}
 
         # First, get the blog ID from the blog handle
         blog_list_url = f"https://{shop_url}.myshopify.com/admin/api/{api_version}/blogs.json"
@@ -680,9 +747,9 @@ async def publish_simple_content(blog_id: int, store_id: str = "perfectseed", db
 
             return {
                 "status": "success",
-                "message": f"Article published to {store['name']}!",
+                "message": f"Article published to {store_name}!",
                 "url": live_url,
-                "store": store["name"],
+                "store": store_name,
                 "article_id": article_id
             }
         else:
@@ -775,6 +842,7 @@ app.include_router(keywords.router, prefix="/api/keywords", tags=["Keywords"])
 app.include_router(blogs.router, prefix="/api/blogs", tags=["Blogs"])
 app.include_router(stores.router, prefix="/api/stores", tags=["Stores"])
 app.include_router(products.router, prefix="/api/products", tags=["Products"])
+app.include_router(shopify_oauth.router, prefix="/api/shopify/oauth", tags=["Shopify OAuth"])
 
 if __name__ == "__main__":
     import uvicorn

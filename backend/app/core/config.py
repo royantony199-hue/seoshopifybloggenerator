@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     # Stripe
     STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
+
+    # Shopify OAuth
+    SHOPIFY_CLIENT_ID: Optional[str] = None
+    SHOPIFY_CLIENT_SECRET: Optional[str] = None
+    SHOPIFY_OAUTH_REDIRECT_URI: str = "http://localhost:8000/api/shopify/oauth/callback"
+    SHOPIFY_SCOPES: str = "read_content,write_content"
+
+    # Production Shopify Store Tokens (legacy support)
+    SHOPIFY_ACCESS_TOKEN_PERFECTSEED: Optional[str] = None
+    SHOPIFY_ACCESS_TOKEN_TRUSTTHEPLANT: Optional[str] = None
     
     # Monitoring
     SENTRY_DSN: Optional[str] = None

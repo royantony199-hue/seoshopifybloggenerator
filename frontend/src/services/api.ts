@@ -307,6 +307,53 @@ export const productsApi = {
   },
 };
 
+export const shopifyOAuthApi = {
+  // Start OAuth flow - returns authorization URL
+  startOAuth: async (shop_url: string, store_name: string) => {
+    const response = await fetch(`${API_BASE}/api/shopify/oauth/authorize`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ shop_url, store_name }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to start OAuth flow');
+    }
+    return response.json();
+  },
+
+  // Get connected OAuth stores
+  getConnectedStores: async () => {
+    const response = await fetch(`${API_BASE}/api/shopify/oauth/connected`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to fetch connected stores');
+    return response.json();
+  },
+
+  // Test store connection
+  testConnection: async (storeId: number) => {
+    const response = await fetch(`${API_BASE}/api/shopify/oauth/test-connection/${storeId}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error('Failed to test connection');
+    return response.json();
+  },
+
+  // Disconnect store
+  disconnectStore: async (storeId: number) => {
+    const response = await fetch(`${API_BASE}/api/shopify/oauth/disconnect/${storeId}`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to disconnect store');
+    }
+    return response.json();
+  },
+};
+
 export const settingsApi = {
   getApiKeys: async () => {
     const response = await fetch(`${API_BASE}/api/settings/api-keys`, {

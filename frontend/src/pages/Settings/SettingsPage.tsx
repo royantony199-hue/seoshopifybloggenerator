@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { settingsApi, storesApi, productsApi } from '../../services/api';
+import { settingsApi, storesApi, productsApi, shopifyOAuthApi } from '../../services/api';
 import {
   Container,
   Typography,
@@ -47,6 +47,9 @@ import {
   Add,
   Inventory,
   Edit,
+  Link as LinkIcon,
+  CheckCircle,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 
 interface TabPanelProps {
@@ -175,6 +178,51 @@ const SettingsPage: React.FC = () => {
 
   const [shopifyStores, setShopifyStores] = useState<ShopifyStore[]>([]);
 
+  // Load OAuth connected stores
+  const loadConnectedStores = async () => {
+    try {
+      const stores = await shopifyOAuthApi.getConnectedStores();
+      setConnectedStores(stores);
+    } catch (error) {
+      console.error('Failed to load connected stores:', error);
+    }
+  };
+
+  // Handle OAuth Connect
+  const handleOAuthConnect = async () => {
+    if (!oauthShopUrl || !oauthStoreName) {
+      setOauthError('Please fill in both Store Name and Shop URL');
+      return;
+    }
+
+    setOauthLoading(true);
+    setOauthError('');
+
+    try {
+      const result = await shopifyOAuthApi.startOAuth(oauthShopUrl, oauthStoreName);
+
+      // Redirect to Shopify authorization URL
+      window.location.href = result.authorization_url;
+    } catch (error: any) {
+      setOauthError(error.message || 'Failed to start OAuth flow');
+      setOauthLoading(false);
+    }
+  };
+
+  // Test OAuth store connection
+  const handleTestConnection = async (storeId: number) => {
+    try {
+      const result = await shopifyOAuthApi.testConnection(storeId);
+      if (result.connected) {
+        alert(`Connected! Store: ${result.shop_name}`);
+      } else {
+        alert(`Connection failed: ${result.message}`);
+      }
+    } catch (error: any) {
+      alert(`Test failed: ${error.message}`);
+    }
+  };
+
   // Products State
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState(0);
@@ -191,9 +239,18 @@ const SettingsPage: React.FC = () => {
     is_active: true
   });
 
+  // OAuth Dialog State
+  const [oauthDialogOpen, setOauthDialogOpen] = useState(false);
+  const [oauthShopUrl, setOauthShopUrl] = useState('');
+  const [oauthStoreName, setOauthStoreName] = useState('');
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [oauthError, setOauthError] = useState('');
+  const [connectedStores, setConnectedStores] = useState<any[]>([]);
+
   useEffect(() => {
     loadApiKeys();
     loadShopifyStores();
+    loadConnectedStores();
   }, []);
 
   useEffect(() => {
@@ -698,14 +755,69 @@ const SettingsPage: React.FC = () => {
             <Typography variant="h6">
               Connected Shopify Stores
             </Typography>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={handleAddStore}
-            >
-              Add Store
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<LinkIcon />}
+                onClick={() => setOauthDialogOpen(true)}
+              >
+                Connect via OAuth
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<Add />}
+                onClick={handleAddStore}
+              >
+                Add Manually
+              </Button>
+            </Box>
           </Box>
+
+          {/* OAuth Connected Stores Section */}
+          {connectedStores.length > 0 && (
+            <Card sx={{ mb: 3, bgcolor: 'success.light', color: 'success.contrastText' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <CheckCircle />
+                  <Typography variant="h6">OAuth Connected Stores</Typography>
+                </Box>
+                <Grid container spacing={2}>
+                  {connectedStores.map((store) => (
+                    <Grid item xs={12} md={6} key={store.id}>
+                      <Paper sx={{ p: 2 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Box>
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              {store.store_name}
+                            </Typography>
+                            <Typography variant="body2" color="textSecondary">
+                              {store.shop_url}.myshopify.com
+                            </Typography>
+                            <Typography variant="body2" color="textSecondary">
+                              Blog: {store.blog_handle}
+                            </Typography>
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleTestConnection(store.id)}
+                          >
+                            Test
+                          </Button>
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
+              </CardContent>
+            </Card>
+          )}
+
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <strong>OAuth Connect (Recommended):</strong> Use "Connect via OAuth" for stores without the legacy "Develop apps" feature.
+            This securely authenticates with Shopify and stores the token automatically.
+          </Alert>
 
           {shopifyStores.map((store, index) => (
             <Card key={store.id} sx={{ mb: 2 }}>
@@ -1189,6 +1301,63 @@ const SettingsPage: React.FC = () => {
           </Grid>
         </Grid>
       </TabPanel>
+
+      {/* OAuth Connect Dialog */}
+      <Dialog open={oauthDialogOpen} onClose={() => setOauthDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LinkIcon color="primary" />
+            Connect Shopify Store via OAuth
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              OAuth connection is recommended for stores that don't have the legacy "Develop apps" feature.
+              You'll be redirected to Shopify to authorize the connection.
+            </Alert>
+
+            {oauthError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {oauthError}
+              </Alert>
+            )}
+
+            <TextField
+              fullWidth
+              label="Store Name"
+              value={oauthStoreName}
+              onChange={(e) => setOauthStoreName(e.target.value)}
+              placeholder="Trust The Plant"
+              sx={{ mb: 2 }}
+              helperText="A friendly name for this store"
+            />
+
+            <TextField
+              fullWidth
+              label="Shop URL"
+              value={oauthShopUrl}
+              onChange={(e) => setOauthShopUrl(e.target.value)}
+              placeholder="bluelotusimaginal"
+              InputProps={{
+                endAdornment: <Typography color="textSecondary">.myshopify.com</Typography>
+              }}
+              helperText="Your Shopify store subdomain (without .myshopify.com)"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOauthDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleOAuthConnect}
+            disabled={oauthLoading || !oauthShopUrl || !oauthStoreName}
+            startIcon={oauthLoading ? null : <LinkIcon />}
+          >
+            {oauthLoading ? 'Connecting...' : 'Connect to Shopify'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Product Dialog */}
       <Dialog open={productDialogOpen} onClose={handleCloseProductDialog} maxWidth="md" fullWidth>
