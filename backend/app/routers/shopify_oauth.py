@@ -25,10 +25,10 @@ import os
 
 # Fallback to direct env var read if pydantic-settings doesn't pick it up
 def get_shopify_client_id():
-    return get_shopify_client_id() or os.environ.get("SHOPIFY_CLIENT_ID")
+    return settings.SHOPIFY_CLIENT_ID or os.environ.get("SHOPIFY_CLIENT_ID")
 
 def get_shopify_client_secret():
-    return get_shopify_client_secret() or os.environ.get("SHOPIFY_CLIENT_SECRET")
+    return settings.SHOPIFY_CLIENT_SECRET or os.environ.get("SHOPIFY_CLIENT_SECRET")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
