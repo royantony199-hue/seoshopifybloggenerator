@@ -21,6 +21,14 @@ import logging
 from app.core.database import get_db, ShopifyStore
 from app.core.config import settings
 from app.routers.demo_auth import get_demo_current_user
+import os
+
+# Fallback to direct env var read if pydantic-settings doesn't pick it up
+def get_shopify_client_id():
+    return get_shopify_client_id() or os.environ.get("SHOPIFY_CLIENT_ID")
+
+def get_shopify_client_secret():
+    return get_shopify_client_secret() or os.environ.get("SHOPIFY_CLIENT_SECRET")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -80,7 +88,8 @@ async def start_oauth_flow(
 
     Returns an authorization URL that the frontend should redirect the user to.
     """
-    if not settings.SHOPIFY_CLIENT_ID:
+    client_id = get_shopify_client_id()
+    if not client_id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Shopify OAuth not configured. Set SHOPIFY_CLIENT_ID in environment."
@@ -116,7 +125,7 @@ async def start_oauth_flow(
     shop_domain = f"{request.shop_url}.myshopify.com"
     auth_url = (
         f"https://{shop_domain}/admin/oauth/authorize"
-        f"?client_id={settings.SHOPIFY_CLIENT_ID}"
+        f"?client_id={get_shopify_client_id()}"
         f"&scope={settings.SHOPIFY_SCOPES}"
         f"&redirect_uri={redirect_uri}"
         f"&state={state}"
@@ -171,8 +180,8 @@ async def oauth_callback(
         exchange_redirect_uri = state_data.get("redirect_uri", settings.SHOPIFY_OAUTH_REDIRECT_URI)
 
         response = requests.post(token_url, json={
-            "client_id": settings.SHOPIFY_CLIENT_ID,
-            "client_secret": settings.SHOPIFY_CLIENT_SECRET,
+            "client_id": get_shopify_client_id(),
+            "client_secret": get_shopify_client_secret(),
             "code": code
         }, timeout=30)
 
