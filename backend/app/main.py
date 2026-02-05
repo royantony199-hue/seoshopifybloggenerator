@@ -573,9 +573,9 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
             "error": str(e)
         }
 
-@app.get("/api/stores")
-async def get_stores():
-    """Get available Shopify stores"""
+@app.get("/api/store-options")
+async def get_store_options():
+    """Get available Shopify stores for dropdown selector"""
     stores = []
     for store_id, store in SHOPIFY_STORES.items():
         stores.append({
