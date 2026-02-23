@@ -284,8 +284,30 @@ class BillingRecord(Base):
 # Database utility functions
 
 async def create_tables():
-    """Create all tables"""
+    """Create all tables and run migrations"""
     Base.metadata.create_all(bind=engine)
+
+    # Run migrations for new columns
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Add usage_count column if it doesn't exist
+            try:
+                conn.execute(text("ALTER TABLE keywords ADD COLUMN usage_count INTEGER DEFAULT 0"))
+                conn.commit()
+                print("✅ Added usage_count column to keywords table")
+            except Exception:
+                pass  # Column already exists
+
+            # Add last_used_at column if it doesn't exist
+            try:
+                conn.execute(text("ALTER TABLE keywords ADD COLUMN last_used_at TIMESTAMP"))
+                conn.commit()
+                print("✅ Added last_used_at column to keywords table")
+            except Exception:
+                pass  # Column already exists
+    except Exception as e:
+        print(f"Migration note: {e}")
 
 def get_db():
     """Get database session"""
