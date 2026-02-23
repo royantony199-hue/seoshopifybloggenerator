@@ -171,23 +171,27 @@ class KeywordCampaign(Base):
 class Keyword(Base):
     """Keyword tracking"""
     __tablename__ = "keywords"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     campaign_id = Column(Integer, ForeignKey("keyword_campaigns.id"), nullable=True)
-    
+
     keyword = Column(String, nullable=False, index=True)
     search_volume = Column(Integer, nullable=True)
     keyword_difficulty = Column(Float, nullable=True)
     category = Column(String, nullable=True)
-    
+
     # Processing status
     status = Column(String, default="pending")  # pending, processing, completed, failed
     blog_generated = Column(Boolean, default=False)
-    
+
+    # Usage tracking for keyword cycling (keywords never run out)
+    usage_count = Column(Integer, default=0)  # How many times this keyword has been used
+    last_used_at = Column(DateTime(timezone=True), nullable=True)  # When it was last used
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     processed_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Relationships
     tenant = relationship("Tenant", back_populates="keywords")
     campaign = relationship("KeywordCampaign", back_populates="keywords")

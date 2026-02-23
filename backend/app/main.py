@@ -504,18 +504,17 @@ async def health_check():
 
 @app.get("/api/stats")
 async def get_simple_stats(db: Session = Depends(get_db)):
-    """Get simple stats for dashboard"""
+    """Get simple stats for dashboard - keywords cycle automatically and never run out"""
     try:
         user = await get_demo_current_user(db)
         tenant_id = user.tenant_id
 
-        # Count keywords
+        # Count keywords - all keywords are always "available" since they cycle
         total_keywords = db.query(Keyword).filter(Keyword.tenant_id == tenant_id).count()
-        used_keywords = db.query(Keyword).filter(
-            Keyword.tenant_id == tenant_id,
-            Keyword.blog_generated == True
-        ).count()
-        remaining_keywords = total_keywords - used_keywords
+
+        # Keywords cycle - show total as "remaining" since they never run out
+        # This shows how many unique keywords are in the pool
+        remaining_keywords = total_keywords
 
         # Count blogs
         pending_blogs = db.query(GeneratedBlog).filter(
@@ -597,10 +596,11 @@ async def get_simple_content(db: Session = Depends(get_db)):
 
 @app.post("/api/generate")
 async def generate_simple_content(request: GenerateRequest, db: Session = Depends(get_db)):
-    """Generate content using OpenAI"""
+    """Generate content using OpenAI - keywords cycle automatically and never run out"""
     try:
         from app.routers.blogs import BlogGenerator
         from app.core.config import BLOG_TEMPLATES
+        from sqlalchemy import func as sql_func
 
         user = await get_demo_current_user(db)
         tenant_id = user.tenant_id
@@ -612,17 +612,29 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
                 "error": "OpenAI API key not configured. Please set the OPENAI_API_KEY environment variable."
             }
 
-        # Get pending keywords
-        pending_keywords = db.query(Keyword).filter(
-            Keyword.tenant_id == tenant_id,
-            Keyword.blog_generated == False,
-            Keyword.status == "pending"
-        ).limit(request.count).all()
+        # Get keywords ordered by usage_count (least used first) - keywords cycle automatically
+        # This ensures keywords never "run out" - they just cycle through
+        try:
+            # Try to use usage_count column (new schema)
+            pending_keywords = db.query(Keyword).filter(
+                Keyword.tenant_id == tenant_id,
+                Keyword.status != "processing"  # Don't pick keywords currently being processed
+            ).order_by(
+                sql_func.coalesce(Keyword.usage_count, 0).asc(),  # Least used first
+                Keyword.search_volume.desc()  # Then by highest search volume
+            ).limit(request.count).all()
+        except Exception:
+            # Fallback for old schema without usage_count
+            pending_keywords = db.query(Keyword).filter(
+                Keyword.tenant_id == tenant_id,
+                Keyword.blog_generated == False,
+                Keyword.status == "pending"
+            ).limit(request.count).all()
 
         if not pending_keywords:
             return {
                 "status": "warning",
-                "message": "All available keywords have been used! No new content can be generated to avoid duplicates. You have successfully covered all topics in your keyword database."
+                "message": "No keywords found in your database. Please upload keywords first to generate content."
             }
 
         generated = 0
@@ -666,10 +678,16 @@ async def generate_simple_content(request: GenerateRequest, db: Session = Depend
                     )
                     db.add(new_blog)
 
-                    # Mark keyword as completed
+                    # Mark keyword as completed and increment usage count
                     keyword.status = "completed"
                     keyword.blog_generated = True
                     keyword.processed_at = datetime.utcnow()
+                    # Increment usage_count for cycling (keywords never run out)
+                    try:
+                        keyword.usage_count = (keyword.usage_count or 0) + 1
+                        keyword.last_used_at = datetime.utcnow()
+                    except Exception:
+                        pass  # Old schema without usage_count column
                     db.commit()
                     generated += 1
                 else:
